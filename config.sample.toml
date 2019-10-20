@@ -1,0 +1,32 @@
+# Number of seconds to wait between fan update interations.
+interval = 5
+
+# Definition of a logical fan zone.
+[[zones]]
+# List of IPMI zones to be included in this logical zone.
+ipmi_zones = [0]
+
+# IPMI temperature sensors to use. Sensors that don't exist are ignored.
+sensors = ["CPU1 Temp"]
+
+# Boundaries for temperatures and duty cycles. The temperatures are in degrees
+# Celsius and the PWM duty cycles are percentages. At 0% duty cycle, the fans
+# are completely turned off and at 100% duty cycle, the fans are at the maximum
+# speed. Be careful using low percentages as the fans may stall.
+#
+# At `min_temp`, the duty cycle will be set to `min_dcycle`. Similarly, at
+# `max_temp`, the duty cycle will be set to `max_dcycle`. Intermediate
+# temperatures are scaled to the corresponding duty cycle linearly.
+min_temp = 30
+max_temp = 70
+min_dcycle = 30
+max_dcycle = 100
+
+# More fan zones can be added
+#[[zones]]
+#ipmi_zones = [1]
+#sensors = ["CPU2 Temp"]
+#min_temp = 30
+#max_temp = 70
+#min_dcycle = 30
+#max_dcycle = 100

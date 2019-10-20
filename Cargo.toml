@@ -1,0 +1,23 @@
+[package]
+name = "ipmi-fan-control"
+version = "0.1.0"
+authors = ["Andrew Gunnerson <andrewgunnerson@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+env_logger = "0.6.2"
+log = "0.4.8"
+signal-hook = "0.1.10"
+snafu = "0.5.0"
+structopt = "0.3.1"
+toml = "0.5"
+
+[dependencies.rexpect]
+git = "https://github.com/philippkeller/rexpect.git"
+rev = "3ee95ebf53c3c5b56a971d4f3474baab8045d3e7"
+
+[dependencies.serde]
+version = "1.0.101"
+features = ["derive"]
