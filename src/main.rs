@@ -21,6 +21,7 @@ use toml;
 mod ipmi;
 use ipmi::{FanMode, Ipmi};
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Snafu)]
 enum Error {
     #[snafu(display("Failed to load config {:?}: {}", path, source))]
@@ -149,10 +150,10 @@ impl MainApp {
             zone_config.max_dcycle
         } else {
             // Linear scaling
-            ((max_cpu_temp - zone_config.min_temp) as u32
-                * (zone_config.max_dcycle - zone_config.min_dcycle) as u32
-                / (zone_config.max_temp - zone_config.min_temp) as u32
-                + zone_config.min_dcycle as u32) as u8
+            (u32::from(max_cpu_temp - zone_config.min_temp)
+                * u32::from(zone_config.max_dcycle - zone_config.min_dcycle)
+                / u32::from(zone_config.max_temp - zone_config.min_temp)
+                + u32::from(zone_config.min_dcycle)) as u8
         };
 
         for z in &zone_config.ipmi_zones {
