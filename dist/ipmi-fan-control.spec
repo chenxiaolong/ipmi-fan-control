@@ -42,6 +42,7 @@ Description=%{_summary}
 [Service]
 ExecStart=%{_bindir}/%{name} -c %{_sysconfdir}/%{name}.toml
 Restart=on-failure
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
