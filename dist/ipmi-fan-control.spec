@@ -1,7 +1,7 @@
 %global _summary SuperMicro IPMI fan control daemon
 
 Name:           ipmi-fan-control
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        %{_summary}
 
@@ -65,5 +65,8 @@ EOF
 %{_unitdir}/%{name}.service
 
 %changelog
-* Thu Oct 24 20:23:29 EDT 2019 Andrew Gunnerson <andrewgunnerson@gmail.com> - 0.1.0-1
+* Thu Oct 24 2019 Andrew Gunnerson <andrewgunnerson@gmail.com> - 0.1.1-1
+- Set KillMode=process
+
+* Thu Oct 24 2019 Andrew Gunnerson <andrewgunnerson@gmail.com> - 0.1.0-1
 - Initial package
