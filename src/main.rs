@@ -24,13 +24,16 @@ use ipmi::{FanMode, Ipmi};
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Snafu)]
 enum Error {
-    #[snafu(display("Failed to load config {:?}: {}", path, source))]
-    ConfigLoadError {
+    #[snafu(display("Failed to parse config {:?}: {}", path, source))]
+    ConfigParseError {
         path: PathBuf,
         source: toml::de::Error,
     },
-    #[snafu(display("No CPU temperature sensors found"))]
-    NoCpuTempSensorsFound,
+    #[snafu(display("Failed to validate config {:?}: {}", path, reason))]
+    ConfigValidationError {
+        path: PathBuf,
+        reason: String,
+    },
     #[snafu(display("Failed to parse sensor value: '{}': {}", value, source))]
     SensorValueParseError {
         value: String,
@@ -49,21 +52,17 @@ enum Error {
 
 type Result<T, E = Error> = result::Result<T, E>;
 
-#[derive(Debug, Default)]
-struct SensorReading {
-    name: String,
-    value: String,
-    status: String,
+#[derive(Clone, Copy, Debug, Deserialize)]
+struct Step {
+    temp: u8,
+    dcycle: u8,
 }
 
 #[derive(Debug, Deserialize)]
 struct Zone {
     ipmi_zones: Vec<u8>,
     sensors: Vec<String>,
-    min_temp: u8,
-    max_temp: u8,
-    min_dcycle: u8,
-    max_dcycle: u8,
+    steps: Vec<Step>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,26 +143,57 @@ impl MainApp {
     fn update_duty_cycle(ipmi: &mut Ipmi, zone_config: &Zone) -> Result<()> {
         let max_cpu_temp = Self::get_max_cpu_temp(ipmi, &zone_config.sensors)?;
 
-        let dcycle_val = if max_cpu_temp <= zone_config.min_temp {
-            zone_config.min_dcycle
-        } else if max_cpu_temp >= zone_config.max_temp {
-            zone_config.max_dcycle
+        let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&max_cpu_temp));
+        // Index of first step >= the current temperature (if exists)
+        let above_index = match result {
+            Ok(i) => Some(i),
+            Err(i) if i == zone_config.steps.len() => None,
+            Err(i) => Some(i),
+        };
+        // Index of first step < the current temperature (if exists)
+        let below_index = match above_index {
+            Some(0) => None,
+            Some(i) => Some(i - 1),
+            None => None,
+        };
+        // If step above doesn't exist, use last step's dcycle or 100%
+        let above_step = match above_index {
+            Some(i) => zone_config.steps[i],
+            None => {
+                let dcycle = zone_config.steps.last()
+                    .map(|s| s.dcycle)
+                    .unwrap_or(100);
+
+                Step {
+                    temp: max_cpu_temp,
+                    dcycle,
+                }
+            }
+        };
+        // If step below doesn't exist, use same step as step above
+        let below_step = match below_index {
+            Some(i) => zone_config.steps[i],
+            None => above_step,
+        };
+
+        let dcycle_new = if below_step.temp == above_step.temp {
+            below_step.dcycle
         } else {
-            // Linear scaling
-            (u32::from(max_cpu_temp - zone_config.min_temp)
-                * u32::from(zone_config.max_dcycle - zone_config.min_dcycle)
-                / u32::from(zone_config.max_temp - zone_config.min_temp)
-                + u32::from(zone_config.min_dcycle)) as u8
+            // Linearly scale the dcycle
+            (u32::from(max_cpu_temp - below_step.temp)
+                * u32::from(above_step.dcycle - below_step.dcycle)
+                / u32::from(above_step.temp - below_step.temp)
+                + u32::from(below_step.dcycle)) as u8
         };
 
         for z in &zone_config.ipmi_zones {
-            let dcycle = ipmi.get_duty_cycle(*z)
+            let dcycle_cur = ipmi.get_duty_cycle(*z)
                 .context(IpmiError)?;
 
             info!("- Zone {}: cpu_temp={}C, dcycle_cur={}%, dcycle_new={}%",
-                  z, max_cpu_temp, dcycle, dcycle_val);
+                  z, max_cpu_temp, dcycle_cur, dcycle_new);
 
-            ipmi.set_duty_cycle(*z, dcycle_val)
+            ipmi.set_duty_cycle(*z, dcycle_new)
                 .context(IpmiError)?;
         }
 
@@ -172,7 +202,7 @@ impl MainApp {
 
     /// Get maximum CPU temperature sensor value in degrees Celsius
     fn get_max_cpu_temp<T: AsRef<str>>(ipmi: &mut Ipmi, sensors: &[T]) -> Result<u8> {
-        ipmi.get_sensor_readings(sensors)
+        let temp = ipmi.get_sensor_readings(sensors)
             .context(IpmiError)?
             .into_iter()
             .map(|x| x.context(IpmiError) )
@@ -181,7 +211,8 @@ impl MainApp {
             .collect::<Result<Vec<u8>>>()? // TODO: Can be avoided with itertools
             .into_iter()
             .max()
-            .ok_or(Error::NoCpuTempSensorsFound)
+            .unwrap(); // Config validation guarantees there are sensors
+        Ok(temp)
     }
 }
 
@@ -216,14 +247,56 @@ fn load_config(path: &Path) -> Result<Config> {
     let contents = fs::read_to_string(path)
         .context(IoError { path })?;
 
-    toml::from_str(&contents)
-        .context(ConfigLoadError { path })
-}
+    let config: Config = toml::from_str(&contents)
+        .context(ConfigParseError { path })?;
 
-// TODO: Validate config
-// min < max
-// 0 <= dcycle <= 100
-// interval > 0
+    // Validate config
+    if config.interval == Some(0) {
+        return Err(Error::ConfigValidationError {
+            path: path.to_owned(),
+            reason: "interval: must be greater than 0".to_owned(),
+        });
+    }
+
+    for (i, ref zone_config) in config.zones.iter().enumerate() {
+        if zone_config.ipmi_zones.is_empty() {
+            return Err(Error::ConfigValidationError {
+                path: path.to_owned(),
+                reason: format!("zones[{}].ipmi_zones: must be non-empty", i),
+            });
+        } else if zone_config.sensors.is_empty() {
+            return Err(Error::ConfigValidationError {
+                path: path.to_owned(),
+                reason: format!("zones[{}].sensors: must be non-empty", i),
+            });
+        }
+
+        for window in zone_config.steps.windows(2) {
+            if window[0].temp >= window[1].temp {
+                return Err(Error::ConfigValidationError {
+                    path: path.to_owned(),
+                    reason: format!("zones[{}].steps[*].temp: values are not strictly increasing", i),
+                });
+            } else if window[0].dcycle > window[1].dcycle {
+                return Err(Error::ConfigValidationError {
+                    path: path.to_owned(),
+                    reason: format!("zones[{}].steps[*].dcycle: values are not increasing", i),
+                });
+            }
+        }
+
+        for (j, &step) in zone_config.steps.iter().enumerate() {
+            if step.dcycle > 100 {
+                return Err(Error::ConfigValidationError {
+                    path: path.to_owned(),
+                    reason: format!("zones[{}].steps[{}].dcycle: invalid percentage: {}", i, j, step.dcycle),
+                });
+            }
+        }
+    }
+
+    Ok(config)
+}
 
 fn main_wrapper() -> Result<()> {
     env_logger::from_env(Env::default().default_filter_or("info")).init();
