@@ -1,13 +1,13 @@
 use std::{
     error,
+    process::Command,
     result,
 };
 
 use log::debug;
 use rexpect::{
     errors,
-    session::PtyReplSession,
-    spawn,
+    session::{PtyReplSession, spawn_command},
 };
 use snafu::{ResultExt, Snafu};
 
@@ -85,10 +85,13 @@ pub struct Ipmi {
 
 impl Ipmi {
     pub fn new() -> Result<Self> {
+        let mut command = Command::new("ipmitool");
+        command.arg("shell");
+
         let mut session = PtyReplSession {
             echo_on: false,
             prompt: "ipmitool> ".to_string(),
-            pty_session: spawn("ipmitool shell", Some(2000))
+            pty_session: spawn_command(command, Some(2000))
                 .context(InteractionError)?,
             quit_command: Some("exit".to_string()),
         };
