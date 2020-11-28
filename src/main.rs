@@ -85,6 +85,7 @@ struct Zone {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Config {
     ipmitool_args: Option<Vec<String>>,
     zones: Vec<Zone>,
