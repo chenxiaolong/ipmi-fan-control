@@ -163,7 +163,7 @@ impl Ipmi {
 
             command.push_str(" '");
             command.push_str(sensor);
-            command.push_str("'");
+            command.push('\'');
         }
 
         debug!("Running IPMI command: '{}'", command);
