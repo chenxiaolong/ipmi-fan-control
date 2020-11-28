@@ -1,5 +1,10 @@
 # Definition of a logical fan zone.
 [[zones]]
+# IPMI session. If unspecified, the `default` session is used, which runs
+# ipmitool with no arguments. Sessions are defined below in the `sessions`
+# section.
+#session = "default"
+
 # List of IPMI zones to be included in this logical zone.
 ipmi_zones = [0]
 
@@ -43,3 +48,17 @@ steps = [
 #    { temp = 30, dcycle = 30 },
 #    { temp = 70, dcycle = 70 },
 #]
+
+# Optional section for defining other ipmitool sessions. This is not needed when
+# connecting to the local machine.
+#
+# The key is the name of the session, which can be any arbitrary non-empty
+# string, and the value is the array of arguments to pass to ipmitool.
+[sessions]
+# Implicit default session for connecting to local IPMI. This runs ipmitool with
+# no arguments. If this is changed, it will take effect in any zone that doesn't
+# explicitly specify another session.
+#"default" = []
+
+# Example of a remote session.
+#"remote" = ["-I", "lanplus", "-H", "<host>", "-U", "<username>", "-P", "<password>"]
