@@ -1,3 +1,6 @@
+mod compat;
+mod ipmi;
+
 use std::{
     fs,
     io::{self, Read},
@@ -6,19 +9,18 @@ use std::{
     path::{Path, PathBuf},
     process,
     result,
-    time,
+    time::Duration,
     u8,
 };
 
 use env_logger::{self, Env};
+use gcd::Gcd;
 use log::{debug, error, info};
 use serde::{Deserialize};
-use signal_hook;
 use snafu::{ResultExt, Snafu};
 use structopt::StructOpt;
-use toml;
 
-mod ipmi;
+use compat::FoldFirst;
 use ipmi::{FanMode, Ipmi};
 
 #[allow(clippy::enum_variant_names)]
@@ -53,6 +55,21 @@ enum Error {
 type Result<T, E = Error> = result::Result<T, E>;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
+struct Interval(u8);
+
+impl Interval {
+    fn to_duration(&self) -> Duration {
+        Duration::from_secs(self.0.into())
+    }
+}
+
+impl Default for Interval {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
 struct Step {
     temp: u8,
     dcycle: u8,
@@ -60,6 +77,8 @@ struct Step {
 
 #[derive(Debug, Deserialize)]
 struct Zone {
+    #[serde(default)]
+    interval: Interval,
     ipmi_zones: Vec<u8>,
     sensors: Vec<String>,
     steps: Vec<Step>,
@@ -67,7 +86,6 @@ struct Zone {
 
 #[derive(Debug, Deserialize)]
 struct Config {
-    interval: Option<u8>,
     ipmitool_args: Option<Vec<String>>,
     zones: Vec<Zone>,
 }
@@ -75,18 +93,23 @@ struct Config {
 struct MainApp {
     config: Config,
     cancellation: (UnixStream, UnixStream),
+    tick_length: Interval,
     ipmi: Ipmi,
     orig_fan_mode: FanMode,
 }
 
 impl MainApp {
     fn new(config: Config) -> Result<Self> {
-        let seconds = config.interval.unwrap_or(1);
-        let interval = time::Duration::from_secs(seconds.into());
+        // The GCD of all the intervals gives us the tick interval for the loop.
+        let tick_length = config.zones
+            .iter()
+            .map(|z| z.interval)
+            .fold_first_compat(|a, b| Interval(a.0.gcd(b.0)))
+            .expect("No zones defined");
 
         let cancellation = UnixStream::pair()
             .context(IoError { path: "(cancellation socket)" })?;
-        cancellation.0.set_read_timeout(Some(interval))
+        cancellation.0.set_read_timeout(Some(tick_length.to_duration()))
             .context(IoError { path: "(cancellation socket)" })?;
 
         let mut ipmi = Ipmi::new().context(IpmiError)?;
@@ -97,6 +120,7 @@ impl MainApp {
         Ok(Self {
             config,
             cancellation,
+            tick_length,
             ipmi,
             orig_fan_mode,
         })
@@ -109,9 +133,16 @@ impl MainApp {
 
         info!("Starting fan control loop");
 
+        let mut ticks = vec![0u8; self.config.zones.len()];
+
         loop {
-            for zone_config in &self.config.zones {
-                Self::update_duty_cycle(&mut self.ipmi, zone_config)?;
+            for (i, zone_config) in self.config.zones.iter().enumerate() {
+                if ticks[i] == 0 {
+                    Self::update_duty_cycle(&mut self.ipmi, zone_config)?;
+                }
+
+                let max_ticks = zone_config.interval.0 / self.tick_length.0;
+                ticks[i] = ticks[i].overflowing_add(1).0 % max_ticks;
             }
 
             let mut buf = [0];
@@ -251,14 +282,22 @@ fn load_config(path: &Path) -> Result<Config> {
         .context(ConfigParseError { path })?;
 
     // Validate config
-    if config.interval == Some(0) {
+
+    if config.zones.is_empty() {
         return Err(Error::ConfigValidationError {
             path: path.to_owned(),
-            reason: "interval: must be greater than 0".to_owned(),
+            reason: "zones: must be non-empty".to_owned(),
         });
     }
 
     for (i, ref zone_config) in config.zones.iter().enumerate() {
+        if zone_config.interval.0 == 0 {
+            return Err(Error::ConfigValidationError {
+                path: path.to_owned(),
+                reason: format!("zones[{}].interval: must be greater than 0", i),
+            });
+        }
+
         if zone_config.ipmi_zones.is_empty() {
             return Err(Error::ConfigValidationError {
                 path: path.to_owned(),

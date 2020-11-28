@@ -1,10 +1,11 @@
-# Number of seconds to wait between fan update interations.
-interval = 5
-
 # Definition of a logical fan zone.
 [[zones]]
 # List of IPMI zones to be included in this logical zone.
 ipmi_zones = [0]
+
+# Number of seconds to wait between fan update interations. If unspecified, the
+# default interval is 1 second.
+interval = 5
 
 # IPMI temperature sensors to use. Sensors that don't exist are ignored.
 sensors = ["CPU1 Temp"]
@@ -36,6 +37,7 @@ steps = [
 # More fan zones can be added
 #[[zones]]
 #ipmi_zones = [1]
+#interval = 5
 #sensors = ["CPU2 Temp"]
 #steps = [
 #    { temp = 30, dcycle = 30 },
