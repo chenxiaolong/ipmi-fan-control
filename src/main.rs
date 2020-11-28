@@ -2,6 +2,8 @@ mod compat;
 mod ipmi;
 
 use std::{
+    collections::HashMap,
+    ffi::OsStr,
     fs,
     io::{self, Read},
     num::ParseIntError,
@@ -76,7 +78,18 @@ struct Step {
 }
 
 #[derive(Debug, Deserialize)]
+struct SessionName(String);
+
+impl Default for SessionName {
+    fn default() -> Self {
+        Self("default".to_owned())
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct Zone {
+    #[serde(default)]
+    session: SessionName,
     #[serde(default)]
     interval: Interval,
     ipmi_zones: Vec<u8>,
@@ -84,19 +97,77 @@ struct Zone {
     steps: Vec<Step>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct Sessions(HashMap<String, Vec<String>>);
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
-    ipmitool_args: Option<Vec<String>>,
+    #[serde(default)]
+    sessions: Sessions,
     zones: Vec<Zone>,
+}
+
+struct IpmiSession {
+    /// Session name (for logging only)
+    name: String,
+    /// IPMI session
+    ipmi: Ipmi,
+    /// Original fan mode
+    orig_fan_mode: FanMode,
+    /// Set these zones to dcycle 100% before restoring original fan mode
+    restore_zones: Vec<u8>,
+}
+
+impl IpmiSession {
+    pub fn new<N, I, S, R>(name: N, args: I, restore_zones: R) -> Result<Self>
+    where
+        N: AsRef<str>,
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+        R: IntoIterator<Item = u8>,
+    {
+        let mut ipmi = Ipmi::with_args(args).context(IpmiError)?;
+        let orig_fan_mode = ipmi.get_fan_mode().context(IpmiError)?;
+
+        info!("[{}] Original fan mode: {:?}", name.as_ref(), orig_fan_mode);
+        info!("[{}] Setting fan mode to: {:?}", name.as_ref(), FanMode::Full);
+
+        ipmi.set_fan_mode(FanMode::Full)
+            .context(IpmiError)?;
+
+        Ok(Self {
+            name: name.as_ref().to_owned(),
+            ipmi,
+            orig_fan_mode,
+            restore_zones: restore_zones.into_iter().collect(),
+        })
+    }
+}
+
+impl Drop for IpmiSession {
+    fn drop(&mut self) {
+        for z in &self.restore_zones {
+            info!("[{}] Setting zone {} duty cycle to 100%", self.name, z);
+            match self.ipmi.set_duty_cycle(*z, 100) {
+                Ok(_) => {}
+                Err(e) => error!("[{}] Failed to set duty cycle: {}", self.name, e),
+            }
+        }
+
+        info!("[{}] Restoring fan mode to: {:?}", self.name, self.orig_fan_mode);
+        match self.ipmi.set_fan_mode(self.orig_fan_mode) {
+            Ok(_) => {}
+            Err(e) => error!("[{}] Failed to restore fan mode: {}", self.name, e),
+        }
+    }
 }
 
 struct MainApp {
     config: Config,
     cancellation: (UnixStream, UnixStream),
     tick_length: Interval,
-    ipmi: Ipmi,
-    orig_fan_mode: FanMode,
+    sessions: HashMap<String, IpmiSession>,
 }
 
 impl MainApp {
@@ -108,30 +179,38 @@ impl MainApp {
             .fold_first_compat(|a, b| Interval(a.0.gcd(b.0)))
             .expect("No zones defined");
 
+        let mut sessions = HashMap::new();
+
+        for (name, args) in &config.sessions.0 {
+            let restore_zones: Vec<_> = config.zones
+                .iter()
+                .filter(|z| &z.session.0 == name)
+                .flat_map(|z| &z.ipmi_zones)
+                .copied()
+                .collect();
+
+            // Don't waste resources if nothing would use the session
+            if restore_zones.is_empty() {
+                continue;
+            }
+
+            sessions.insert(name.clone(), IpmiSession::new(name, args, restore_zones)?);
+        }
+
         let cancellation = UnixStream::pair()
             .context(IoError { path: "(cancellation socket)" })?;
         cancellation.0.set_read_timeout(Some(tick_length.to_duration()))
             .context(IoError { path: "(cancellation socket)" })?;
 
-        let mut ipmi = Ipmi::new().context(IpmiError)?;
-        let orig_fan_mode = ipmi.get_fan_mode().context(IpmiError)?;
-
-        info!("Original fan mode: {:?}", orig_fan_mode);
-
         Ok(Self {
             config,
             cancellation,
             tick_length,
-            ipmi,
-            orig_fan_mode,
+            sessions,
         })
     }
 
     fn run(&mut self) -> Result<()> {
-        info!("Setting fan mode to {:?}", FanMode::Full);
-        self.ipmi.set_fan_mode(FanMode::Full)
-            .context(IpmiError)?;
-
         info!("Starting fan control loop");
 
         let mut ticks = vec![0u8; self.config.zones.len()];
@@ -139,7 +218,9 @@ impl MainApp {
         loop {
             for (i, zone_config) in self.config.zones.iter().enumerate() {
                 if ticks[i] == 0 {
-                    Self::update_duty_cycle(&mut self.ipmi, zone_config)?;
+                    // Guaranteed to exist during config validation
+                    let session = self.sessions.get_mut(&zone_config.session.0).unwrap();
+                    Self::update_duty_cycle(session, zone_config)?;
                 }
 
                 let max_ticks = zone_config.interval.0 / self.tick_length.0;
@@ -172,8 +253,8 @@ impl MainApp {
     }
 
     /// Update fan PWM duty cycle based on the CPU temperature
-    fn update_duty_cycle(ipmi: &mut Ipmi, zone_config: &Zone) -> Result<()> {
-        let max_cpu_temp = Self::get_max_cpu_temp(ipmi, &zone_config.sensors)?;
+    fn update_duty_cycle(session: &mut IpmiSession, zone_config: &Zone) -> Result<()> {
+        let max_cpu_temp = Self::get_max_cpu_temp(&mut session.ipmi, &zone_config.sensors)?;
 
         let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&max_cpu_temp));
         // Index of first step >= the current temperature (if exists)
@@ -219,13 +300,13 @@ impl MainApp {
         };
 
         for z in &zone_config.ipmi_zones {
-            let dcycle_cur = ipmi.get_duty_cycle(*z)
+            let dcycle_cur = session.ipmi.get_duty_cycle(*z)
                 .context(IpmiError)?;
 
-            info!("- Zone {}: cpu_temp={}C, dcycle_cur={}%, dcycle_new={}%",
-                  z, max_cpu_temp, dcycle_cur, dcycle_new);
+            info!("[{}] Zone {}: cpu_temp={}C, dcycle_cur={}%, dcycle_new={}%",
+                  session.name, z, max_cpu_temp, dcycle_cur, dcycle_new);
 
-            ipmi.set_duty_cycle(*z, dcycle_new)
+            session.ipmi.set_duty_cycle(*z, dcycle_new)
                 .context(IpmiError)?;
         }
 
@@ -248,26 +329,6 @@ impl MainApp {
     }
 }
 
-impl Drop for MainApp {
-    fn drop(&mut self) {
-        for zone_config in &self.config.zones {
-            for z in &zone_config.ipmi_zones {
-                info!("Setting zone {} duty cycle to 100%", z);
-                match self.ipmi.set_duty_cycle(*z, 100) {
-                    Ok(_) => {}
-                    Err(e) => error!("Failed to set duty cycle: {}", e),
-                }
-            }
-        }
-
-        info!("Restoring fan mode to: {:?}", self.orig_fan_mode);
-        match self.ipmi.set_fan_mode(self.orig_fan_mode) {
-            Ok(_) => {}
-            Err(e) => error!("Failed to restore fan mode: {}", e),
-        }
-    }
-}
-
 #[derive(StructOpt, Debug)]
 struct Opt {
     /// Path to config file
@@ -279,10 +340,16 @@ fn load_config(path: &Path) -> Result<Config> {
     let contents = fs::read_to_string(path)
         .context(IoError { path })?;
 
-    let config: Config = toml::from_str(&contents)
+    let mut config: Config = toml::from_str(&contents)
         .context(ConfigParseError { path })?;
 
     // Validate config
+
+    // Create default session
+    let default_session = SessionName::default().0;
+    if !config.sessions.0.contains_key(&default_session) {
+        config.sessions.0.insert(default_session, vec![]);
+    }
 
     if config.zones.is_empty() {
         return Err(Error::ConfigValidationError {
@@ -308,6 +375,13 @@ fn load_config(path: &Path) -> Result<Config> {
             return Err(Error::ConfigValidationError {
                 path: path.to_owned(),
                 reason: format!("zones[{}].sensors: must be non-empty", i),
+            });
+        }
+
+        if !config.sessions.0.contains_key(&zone_config.session.0) {
+            return Err(Error::ConfigValidationError {
+                path: path.to_owned(),
+                reason: format!("zones[{}].session: {:?} does not exist", i, zone_config.session.0),
             });
         }
 

@@ -1,5 +1,6 @@
 use std::{
     error,
+    ffi::OsStr,
     process::Command,
     result,
 };
@@ -84,10 +85,19 @@ pub struct Ipmi {
 }
 
 impl Ipmi {
-    pub fn new() -> Result<Self> {
+    pub fn with_args<I, S>(args: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
         let mut command = Command::new("ipmitool");
+        command.args(args);
         command.arg("shell");
 
+        Self::with_command(command)
+    }
+
+    fn with_command(command: Command) -> Result<Self> {
         let mut session = PtyReplSession {
             echo_on: false,
             prompt: "ipmitool> ".to_string(),
