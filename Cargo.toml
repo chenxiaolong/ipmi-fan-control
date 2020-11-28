@@ -11,17 +11,14 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-env_logger = "0.7.1"
-log = "0.4.8"
-signal-hook = "0.1.10"
-snafu = "0.5.0"
-structopt = "0.3.3"
+env_logger = "0.8.2"
+log = "0.4.11"
+rexpect = "0.4.0"
+signal-hook = "0.2.1"
+snafu = "0.6.9"
+structopt = "0.3.20"
 toml = "0.5"
 
-[dependencies.rexpect]
-git = "https://github.com/philippkeller/rexpect.git"
-rev = "3ee95ebf53c3c5b56a971d4f3474baab8045d3e7"
-
 [dependencies.serde]
-version = "1.0.101"
+version = "1.0.117"
 features = ["derive"]
