@@ -13,7 +13,10 @@ use std::{
 };
 
 use env_logger::{self, Env};
-use futures::stream::FuturesOrdered;
+use futures::{
+    future::{Abortable, AbortHandle},
+    stream::FuturesUnordered,
+};
 use log::{debug, error, info};
 use snafu::ResultExt;
 use structopt::StructOpt;
@@ -121,31 +124,68 @@ impl MainApp {
     /// Run asynchronous loops for each zone. Returns when interrupted via
     /// signal handlers (eg. ^C) or if a fatal error occurs.
     async fn run(&mut self) -> Result<()> {
-        let mut loops = FuturesOrdered::new();
+        let mut loops = FuturesUnordered::new();
+        let mut aborts = Vec::new();
 
         for zone_config in &self.config.zones {
-            loops.push(tokio::spawn(Self::zone_loop(
-                self.sessions.get_mut(&zone_config.session.0).unwrap().clone(),
-                // Cloned since there's no structured concurrency support yet
-                Arc::new(zone_config.clone()),
+            let (handle, registration) = AbortHandle::new_pair();
+
+            loops.push(tokio::spawn(Abortable::new(
+                Self::zone_loop(
+                    self.sessions.get_mut(&zone_config.session.0).unwrap().clone(),
+                    // Cloned since there's no structured concurrency support yet
+                    Arc::new(zone_config.clone()),
+                ),
+                registration,
             )));
+            aborts.push(handle);
         }
 
-        tokio::select! {
-            c = ctrl_c() => {
-                c.context(IoError { path: "(interrupt)" })?;
-                info!("Interrupted");
-                Ok(())
-            }
-            r = loops.next() => {
-                match r {
-                    // No zones defined
-                    None => Ok(()),
-                    Some(Err(e)) => Err(e).context(LoopPanicked),
-                    Some(Ok(r)) => r,
+        let mut first_result = None;
+
+        loop {
+            let ret: Result<()> = tokio::select! {
+                // Explicitly interrupted by ^C or signal handler
+                c = ctrl_c() => {
+                    if let Ok(_) = c {
+                        info!("Interrupted");
+                    }
+                    c.context(IoError { path: "(interrupt)" })
                 }
+                // Oh boy, this is an Option<Result<Result<Result<()>, Aborted>, JoinError>>
+                r = loops.next() => {
+                    match r {
+                        // No tasks left
+                        None => break,
+                        // The task panicked
+                        Some(Err(e)) => Err(e).context(LoopPanicked),
+                        // The task was aborted
+                        Some(Ok(Err(_))) => Ok(()),
+                        // zone_loop's actual error return value
+                        Some(Ok(Ok(r))) => r,
+                    }
+                }
+            };
+
+            if let None = first_result {
+                info!("Saving first result as: {:?}", ret);
+                first_result = Some(ret);
+            }
+
+            // If tokio::select returned, then a loop exited or the program was
+            // explicitly interrupted. Interrupt all remaining tasks and the
+            // loop will exit once the FuturesUnordered is empty. This mechanism
+            // is necessary because Tokio's JoinHandles do not cancel tasks when
+            // they are dropped. Without the explicit aborts and joins, the
+            // IpmiSession destructors might not run since the tasks would keep
+            // the Arcs alive.
+            for handle in &aborts {
+                info!("Sending abort to {:?}", handle);
+                handle.abort();
             }
         }
+
+        first_result.unwrap_or(Ok(()))
     }
 
     /// Main loop for a zone. The loop runs forever while the future is being
@@ -165,7 +205,7 @@ impl MainApp {
             let z = zone_config.clone();
 
             // Can't use task::block_in_place due to a bug that sometimes causes
-            // tokio to panic
+            // tokio to panic.
             //
             // See: https://github.com/tokio-rs/tokio/issues/2789
             task::spawn_blocking(move || {
