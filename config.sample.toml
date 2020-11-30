@@ -12,8 +12,25 @@ ipmi_zones = [0]
 # default interval is 1 second.
 interval = 5
 
-# IPMI temperature sensors to use. Sensors that don't exist are ignored.
-sensors = ["CPU1 Temp"]
+# Temperature sources to use for measurement. Sensors that report invalid
+# temperatures are currently ignored.
+sources = [
+    # IPMI sensor source. The sensor's units must be `degrees C`.
+    { type = "ipmi", sensor = "CPU1 Temp" },
+
+    # Local file source. File formatting rules:
+    #
+    # * Must be in ASCII encoding
+    # * Units must be milli-degrees Celsius (1/1000 °C)
+    # * No characters other than numbers and whitespace are permitted
+    #
+    # The thermal_zone sysfs paths on Linux satisfy these conditions.
+    { type = "file", path = "/sys/class/thermal/thermal_zone1/temp" },
+
+    # HDD S.M.A.R.T. source. Disks that are spun down are ignored to avoid
+    # unnecessary spin-ups. Requires smartmontools >= 7.0 to be installed.
+    { type = "smart", block_dev = "/dev/disk/by-id/..." },
+]
 
 # List of steps for mapping temperatures to duty cycles. The temperatures are
 # in degrees Celsius and the PWM duty cycles are fan speed percentages. At 0%

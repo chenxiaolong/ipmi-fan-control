@@ -1,112 +1,30 @@
 mod compat;
+mod config;
+mod error;
+mod source;
 mod ipmi;
 
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    fs,
     io::{self, Read},
-    num::ParseIntError,
     os::unix::net::UnixStream,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process,
-    result,
-    time::Duration,
     u8,
 };
 
 use env_logger::{self, Env};
 use gcd::Gcd;
 use log::{debug, error, info};
-use serde::{Deserialize};
-use snafu::{ResultExt, Snafu};
+use snafu::ResultExt;
 use structopt::StructOpt;
 
 use compat::FoldFirst;
+use config::{Config, Interval, Source, Step, Zone, load_config};
+use error::*;
 use ipmi::{FanMode, Ipmi};
-
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, Snafu)]
-enum Error {
-    #[snafu(display("Failed to parse config {:?}: {}", path, source))]
-    ConfigParseError {
-        path: PathBuf,
-        source: toml::de::Error,
-    },
-    #[snafu(display("Failed to validate config {:?}: {}", path, reason))]
-    ConfigValidationError {
-        path: PathBuf,
-        reason: String,
-    },
-    #[snafu(display("Failed to parse sensor value: '{}': {}", value, source))]
-    SensorValueParseError {
-        value: String,
-        source: ParseIntError,
-    },
-    #[snafu(display("IPMI error: {}", source))]
-    IpmiError {
-        source: ipmi::Error,
-    },
-    #[snafu(display("{:?}: {}", path, source))]
-    IoError {
-        path: PathBuf,
-        source: io::Error,
-    },
-}
-
-type Result<T, E = Error> = result::Result<T, E>;
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-struct Interval(u8);
-
-impl Interval {
-    fn to_duration(&self) -> Duration {
-        Duration::from_secs(self.0.into())
-    }
-}
-
-impl Default for Interval {
-    fn default() -> Self {
-        Self(1)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-struct Step {
-    temp: u8,
-    dcycle: u8,
-}
-
-#[derive(Debug, Deserialize)]
-struct SessionName(String);
-
-impl Default for SessionName {
-    fn default() -> Self {
-        Self("default".to_owned())
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct Zone {
-    #[serde(default)]
-    session: SessionName,
-    #[serde(default)]
-    interval: Interval,
-    ipmi_zones: Vec<u8>,
-    sensors: Vec<String>,
-    steps: Vec<Step>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct Sessions(HashMap<String, Vec<String>>);
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Config {
-    #[serde(default)]
-    sessions: Sessions,
-    zones: Vec<Zone>,
-}
+use source::get_source_readings;
 
 struct IpmiSession {
     /// Session name (for logging only)
@@ -254,9 +172,9 @@ impl MainApp {
 
     /// Update fan PWM duty cycle based on the CPU temperature
     fn update_duty_cycle(session: &mut IpmiSession, zone_config: &Zone) -> Result<()> {
-        let max_cpu_temp = Self::get_max_cpu_temp(&mut session.ipmi, &zone_config.sensors)?;
+        let max_temp = Self::get_max_temp(&mut session.ipmi, &zone_config.sources)?;
 
-        let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&max_cpu_temp));
+        let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&max_temp));
         // Index of first step >= the current temperature (if exists)
         let above_index = match result {
             Ok(i) => Some(i),
@@ -278,7 +196,7 @@ impl MainApp {
                     .unwrap_or(100);
 
                 Step {
-                    temp: max_cpu_temp,
+                    temp: max_temp,
                     dcycle,
                 }
             }
@@ -293,7 +211,7 @@ impl MainApp {
             below_step.dcycle
         } else {
             // Linearly scale the dcycle
-            (u32::from(max_cpu_temp - below_step.temp)
+            (u32::from(max_temp - below_step.temp)
                 * u32::from(above_step.dcycle - below_step.dcycle)
                 / u32::from(above_step.temp - below_step.temp)
                 + u32::from(below_step.dcycle)) as u8
@@ -303,8 +221,8 @@ impl MainApp {
             let dcycle_cur = session.ipmi.get_duty_cycle(*z)
                 .context(IpmiError)?;
 
-            info!("[{}] Zone {}: cpu_temp={}C, dcycle_cur={}%, dcycle_new={}%",
-                  session.name, z, max_cpu_temp, dcycle_cur, dcycle_new);
+            info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
+                  session.name, z, max_temp, dcycle_cur, dcycle_new);
 
             session.ipmi.set_duty_cycle(*z, dcycle_new)
                 .context(IpmiError)?;
@@ -313,19 +231,13 @@ impl MainApp {
         Ok(())
     }
 
-    /// Get maximum CPU temperature sensor value in degrees Celsius
-    fn get_max_cpu_temp<T: AsRef<str>>(ipmi: &mut Ipmi, sensors: &[T]) -> Result<u8> {
-        let temp = ipmi.get_sensor_readings(sensors)
-            .context(IpmiError)?
+    /// Get maximum temperature sensor value in degrees Celsius.
+    fn get_max_temp(ipmi: &mut Ipmi, sources: &[Source]) -> Result<u8> {
+        get_source_readings(ipmi, sources)?
             .into_iter()
-            .map(|x| x.context(IpmiError) )
-            .map(|x| x.and_then(|y| y.value.trim().parse::<u8>()
-                .context(SensorValueParseError { value: y.value })))
-            .collect::<Result<Vec<u8>>>()? // TODO: Can be avoided with itertools
-            .into_iter()
+            .filter_map(|r| r)
             .max()
-            .unwrap(); // Config validation guarantees there are sensors
-        Ok(temp)
+            .ok_or(Error::NoValidReadings)
     }
 }
 
@@ -334,82 +246,6 @@ struct Opt {
     /// Path to config file
     #[structopt(short, long)]
     config: PathBuf,
-}
-
-fn load_config(path: &Path) -> Result<Config> {
-    let contents = fs::read_to_string(path)
-        .context(IoError { path })?;
-
-    let mut config: Config = toml::from_str(&contents)
-        .context(ConfigParseError { path })?;
-
-    // Validate config
-
-    // Create default session
-    let default_session = SessionName::default().0;
-    if !config.sessions.0.contains_key(&default_session) {
-        config.sessions.0.insert(default_session, vec![]);
-    }
-
-    if config.zones.is_empty() {
-        return Err(Error::ConfigValidationError {
-            path: path.to_owned(),
-            reason: "zones: must be non-empty".to_owned(),
-        });
-    }
-
-    for (i, ref zone_config) in config.zones.iter().enumerate() {
-        if zone_config.interval.0 == 0 {
-            return Err(Error::ConfigValidationError {
-                path: path.to_owned(),
-                reason: format!("zones[{}].interval: must be greater than 0", i),
-            });
-        }
-
-        if zone_config.ipmi_zones.is_empty() {
-            return Err(Error::ConfigValidationError {
-                path: path.to_owned(),
-                reason: format!("zones[{}].ipmi_zones: must be non-empty", i),
-            });
-        } else if zone_config.sensors.is_empty() {
-            return Err(Error::ConfigValidationError {
-                path: path.to_owned(),
-                reason: format!("zones[{}].sensors: must be non-empty", i),
-            });
-        }
-
-        if !config.sessions.0.contains_key(&zone_config.session.0) {
-            return Err(Error::ConfigValidationError {
-                path: path.to_owned(),
-                reason: format!("zones[{}].session: {:?} does not exist", i, zone_config.session.0),
-            });
-        }
-
-        for window in zone_config.steps.windows(2) {
-            if window[0].temp >= window[1].temp {
-                return Err(Error::ConfigValidationError {
-                    path: path.to_owned(),
-                    reason: format!("zones[{}].steps[*].temp: values are not strictly increasing", i),
-                });
-            } else if window[0].dcycle > window[1].dcycle {
-                return Err(Error::ConfigValidationError {
-                    path: path.to_owned(),
-                    reason: format!("zones[{}].steps[*].dcycle: values are not increasing", i),
-                });
-            }
-        }
-
-        for (j, &step) in zone_config.steps.iter().enumerate() {
-            if step.dcycle > 100 {
-                return Err(Error::ConfigValidationError {
-                    path: path.to_owned(),
-                    reason: format!("zones[{}].steps[{}].dcycle: invalid percentage: {}", i, j, step.dcycle),
-                });
-            }
-        }
-    }
-
-    Ok(config)
 }
 
 fn main_wrapper() -> Result<()> {
