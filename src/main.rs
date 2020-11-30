@@ -6,6 +6,7 @@ mod ipmi;
 use std::{
     collections::HashMap,
     ffi::OsStr,
+    io,
     path::PathBuf,
     process,
     sync::{Arc, Mutex},
@@ -21,7 +22,6 @@ use log::{debug, error, info};
 use snafu::ResultExt;
 use structopt::StructOpt;
 use tokio::{
-    signal::ctrl_c,
     stream::StreamExt,
     task,
     time::sleep,
@@ -31,6 +31,33 @@ use config::{Config, Source, Step, Zone, load_config};
 use error::*;
 use ipmi::{FanMode, Ipmi};
 use source::get_source_readings;
+
+#[cfg(unix)]
+async fn interrupted() -> io::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+
+    tokio::select! {
+        _ = sigint.recv() => {}
+        _ = sigterm.recv() => {}
+    }
+
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn interrupted() -> io::Result<()> {
+    use tokio::signal::windows::{ctrl_break, ctrl_c};
+
+    tokio::select! {
+        _ = ctrl_break() => {},
+        _ = ctrl_c() => {},
+    }
+
+    Ok(())
+}
 
 struct IpmiSession {
     /// Session name (for logging only)
@@ -146,8 +173,8 @@ impl MainApp {
         loop {
             let ret: Result<()> = tokio::select! {
                 // Explicitly interrupted by ^C or signal handler
-                c = ctrl_c() => {
-                    if let Ok(_) = c {
+                c = interrupted() => {
+                    if c.is_ok() {
                         info!("Interrupted");
                     }
                     c.context(IoError { path: "(interrupt)" })
@@ -167,7 +194,7 @@ impl MainApp {
                 }
             };
 
-            if let None = first_result {
+            if first_result.is_none() {
                 first_result = Some(ret);
             }
 
