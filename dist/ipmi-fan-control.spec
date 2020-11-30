@@ -18,6 +18,7 @@ BuildRequires:  rust-packaging
 BuildRequires:  systemd-rpm-macros
 
 Requires:       ipmitool
+Requires:       smartmontools >= 7.0
 
 %description
 %{_summary}

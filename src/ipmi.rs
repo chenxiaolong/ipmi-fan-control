@@ -162,6 +162,10 @@ impl Ipmi {
     pub fn get_sensor_readings<T: AsRef<str>>(&mut self, sensors: &[T])
         -> Result<Vec<Result<SensorReading>>>
     {
+        if sensors.is_empty() {
+            return Ok(vec![]);
+        }
+
         let mut command = "sdr get".to_string();
 
         for sensor in sensors {
