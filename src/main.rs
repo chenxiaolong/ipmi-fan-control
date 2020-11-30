@@ -1,4 +1,3 @@
-mod compat;
 mod config;
 mod error;
 mod source;
@@ -7,21 +6,25 @@ mod ipmi;
 use std::{
     collections::HashMap,
     ffi::OsStr,
-    io::{self, Read},
-    os::unix::net::UnixStream,
     path::PathBuf,
     process,
+    sync::{Arc, Mutex},
     u8,
 };
 
 use env_logger::{self, Env};
-use gcd::Gcd;
+use futures::stream::FuturesOrdered;
 use log::{debug, error, info};
 use snafu::ResultExt;
 use structopt::StructOpt;
+use tokio::{
+    signal::ctrl_c,
+    stream::StreamExt,
+    task,
+    time::sleep,
+};
 
-use compat::FoldFirst;
-use config::{Config, Interval, Source, Step, Zone, load_config};
+use config::{Config, Source, Step, Zone, load_config};
 use error::*;
 use ipmi::{FanMode, Ipmi};
 use source::get_source_readings;
@@ -30,7 +33,7 @@ struct IpmiSession {
     /// Session name (for logging only)
     name: String,
     /// IPMI session
-    ipmi: Ipmi,
+    ipmi: Arc<Mutex<Ipmi>>,
     /// Original fan mode
     orig_fan_mode: FanMode,
     /// Set these zones to dcycle 100% before restoring original fan mode
@@ -56,7 +59,7 @@ impl IpmiSession {
 
         Ok(Self {
             name: name.as_ref().to_owned(),
-            ipmi,
+            ipmi: Arc::new(Mutex::new(ipmi)),
             orig_fan_mode,
             restore_zones: restore_zones.into_iter().collect(),
         })
@@ -65,16 +68,18 @@ impl IpmiSession {
 
 impl Drop for IpmiSession {
     fn drop(&mut self) {
+        let mut ipmi_lock = self.ipmi.lock().unwrap();
+
         for z in &self.restore_zones {
             info!("[{}] Setting zone {} duty cycle to 100%", self.name, z);
-            match self.ipmi.set_duty_cycle(*z, 100) {
+            match ipmi_lock.set_duty_cycle(*z, 100) {
                 Ok(_) => {}
                 Err(e) => error!("[{}] Failed to set duty cycle: {}", self.name, e),
             }
         }
 
         info!("[{}] Restoring fan mode to: {:?}", self.name, self.orig_fan_mode);
-        match self.ipmi.set_fan_mode(self.orig_fan_mode) {
+        match ipmi_lock.set_fan_mode(self.orig_fan_mode) {
             Ok(_) => {}
             Err(e) => error!("[{}] Failed to restore fan mode: {}", self.name, e),
         }
@@ -83,20 +88,11 @@ impl Drop for IpmiSession {
 
 struct MainApp {
     config: Config,
-    cancellation: (UnixStream, UnixStream),
-    tick_length: Interval,
-    sessions: HashMap<String, IpmiSession>,
+    sessions: HashMap<String, Arc<IpmiSession>>,
 }
 
 impl MainApp {
     fn new(config: Config) -> Result<Self> {
-        // The GCD of all the intervals gives us the tick interval for the loop.
-        let tick_length = config.zones
-            .iter()
-            .map(|z| z.interval)
-            .fold_first_compat(|a, b| Interval(a.0.gcd(b.0)))
-            .expect("No zones defined");
-
         let mut sessions = HashMap::new();
 
         for (name, args) in &config.sessions.0 {
@@ -112,67 +108,77 @@ impl MainApp {
                 continue;
             }
 
-            sessions.insert(name.clone(), IpmiSession::new(name, args, restore_zones)?);
+            sessions.insert(name.clone(), Arc::new(
+                IpmiSession::new(name, args, restore_zones)?));
         }
-
-        let cancellation = UnixStream::pair()
-            .context(IoError { path: "(cancellation socket)" })?;
-        cancellation.0.set_read_timeout(Some(tick_length.to_duration()))
-            .context(IoError { path: "(cancellation socket)" })?;
 
         Ok(Self {
             config,
-            cancellation,
-            tick_length,
             sessions,
         })
     }
 
-    fn run(&mut self) -> Result<()> {
-        info!("Starting fan control loop");
+    /// Run asynchronous loops for each zone. Returns when interrupted via
+    /// signal handlers (eg. ^C) or if a fatal error occurs.
+    async fn run(&mut self) -> Result<()> {
+        let mut loops = FuturesOrdered::new();
 
-        let mut ticks = vec![0u8; self.config.zones.len()];
+        for zone_config in &self.config.zones {
+            loops.push(tokio::spawn(Self::zone_loop(
+                self.sessions.get_mut(&zone_config.session.0).unwrap().clone(),
+                // Cloned since there's no structured concurrency support yet
+                Arc::new(zone_config.clone()),
+            )));
+        }
 
-        loop {
-            for (i, zone_config) in self.config.zones.iter().enumerate() {
-                if ticks[i] == 0 {
-                    // Guaranteed to exist during config validation
-                    let session = self.sessions.get_mut(&zone_config.session.0).unwrap();
-                    Self::update_duty_cycle(session, zone_config)?;
-                }
-
-                let max_ticks = zone_config.interval.0 / self.tick_length.0;
-                ticks[i] = ticks[i].overflowing_add(1).0 % max_ticks;
+        tokio::select! {
+            c = ctrl_c() => {
+                c.context(IoError { path: "(interrupt)" })?;
+                info!("Interrupted");
+                Ok(())
             }
-
-            let mut buf = [0];
-
-            match self.cancellation.0.read_exact(&mut buf) {
-                Ok(_) => {
-                    info!("Stopping fan control loop");
-                    break;
-                },
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    // Interval expired
-                },
-                e @ Err(_) => {
-                    return e.context(IoError { path: "(cancellation socket)" });
+            r = loops.next() => {
+                match r {
+                    // No zones defined
+                    None => Ok(()),
+                    Some(Err(e)) => Err(e).context(LoopPanicked),
+                    Some(Ok(r)) => r,
                 }
             }
         }
-
-        Ok(())
     }
 
-    /// Write one byte to the pipe to cancel run()
-    fn get_cancellation_pipe(&self) -> Result<UnixStream> {
-        self.cancellation.1.try_clone()
-            .context(IoError { path: "(cancellation socket)" })
+    /// Main loop for a zone. The loop runs forever while the future is being
+    /// polled.
+    ///
+    /// All communication with the IPMI is behind a mutex to avoid needing
+    /// multiple IPMI sessions.
+    async fn zone_loop(
+        session: Arc<IpmiSession>,
+        zone_config: Arc<Zone>,
+    ) -> Result<()> {
+        info!("[{}] Starting loop for IPMI zones {:?}",
+              session.name, zone_config.ipmi_zones);
+
+        loop {
+            let s = session.clone();
+            let z = zone_config.clone();
+
+            // Can't use task::block_in_place due to a bug that sometimes causes
+            // tokio to panic
+            //
+            // See: https://github.com/tokio-rs/tokio/issues/2789
+            task::spawn_blocking(move || {
+                Self::update_duty_cycle(s, z.as_ref())
+            }).await.context(LoopPanicked)??;
+
+            sleep(zone_config.interval.to_duration()).await;
+        }
     }
 
     /// Update fan PWM duty cycle based on the CPU temperature
-    fn update_duty_cycle(session: &mut IpmiSession, zone_config: &Zone) -> Result<()> {
-        let max_temp = Self::get_max_temp(&mut session.ipmi, &zone_config.sources)?;
+    fn update_duty_cycle(session: Arc<IpmiSession>, zone_config: &Zone) -> Result<()> {
+        let max_temp = Self::get_max_temp(session.ipmi.clone(), &zone_config.sources)?;
 
         let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&max_temp));
         // Index of first step >= the current temperature (if exists)
@@ -217,14 +223,16 @@ impl MainApp {
                 + u32::from(below_step.dcycle)) as u8
         };
 
+        let mut ipmi_lock = session.ipmi.lock().unwrap();
+
         for z in &zone_config.ipmi_zones {
-            let dcycle_cur = session.ipmi.get_duty_cycle(*z)
+            let dcycle_cur = ipmi_lock.get_duty_cycle(*z)
                 .context(IpmiError)?;
 
             info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
                   session.name, z, max_temp, dcycle_cur, dcycle_new);
 
-            session.ipmi.set_duty_cycle(*z, dcycle_new)
+            ipmi_lock.set_duty_cycle(*z, dcycle_new)
                 .context(IpmiError)?;
         }
 
@@ -232,7 +240,7 @@ impl MainApp {
     }
 
     /// Get maximum temperature sensor value in degrees Celsius.
-    fn get_max_temp(ipmi: &mut Ipmi, sources: &[Source]) -> Result<u8> {
+    fn get_max_temp(ipmi: Arc<Mutex<Ipmi>>, sources: &[Source]) -> Result<u8> {
         get_source_readings(ipmi, sources)?
             .into_iter()
             .filter_map(|r| r)
@@ -248,7 +256,7 @@ struct Opt {
     config: PathBuf,
 }
 
-fn main_wrapper() -> Result<()> {
+async fn main_wrapper() -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let opt = Opt::from_args();
@@ -257,19 +265,12 @@ fn main_wrapper() -> Result<()> {
     debug!("Loaded config: {:#?}", config);
 
     let mut app = MainApp::new(config)?;
-
-    for signal in &[signal_hook::SIGINT, signal_hook::SIGTERM] {
-        let socket = app.get_cancellation_pipe()?;
-
-        signal_hook::pipe::register(*signal, socket)
-            .context(IoError { path: "(cancellation socket)" })?;
-    }
-
-    app.run()
+    app.run().await
 }
 
-fn main() {
-    match main_wrapper() {
+#[tokio::main]
+async fn main() {
+    match main_wrapper().await {
         Ok(_) => {}
         Err(e) => {
             error!("{}", e);

@@ -17,7 +17,7 @@ pub enum Error {
     #[snafu(display("Failed to parse line '{}': {}", line, source))]
     OutputParseError {
         line: String,
-        source: Box<dyn error::Error>,
+        source: Box<dyn error::Error + 'static + Send + Sync>,
     },
     #[snafu(display("Failed to interact with ipmitool: {}", source))]
     InteractionError {

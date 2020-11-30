@@ -32,7 +32,7 @@ pub struct Step {
     pub dcycle: u8,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct SessionName(pub String);
 
 impl Default for SessionName {
@@ -41,7 +41,7 @@ impl Default for SessionName {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
 pub enum Source {
     Ipmi {
@@ -57,7 +57,7 @@ pub enum Source {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Zone {
     #[serde(default)]
