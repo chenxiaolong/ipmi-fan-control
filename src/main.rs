@@ -172,9 +172,9 @@ impl MainApp {
 
     /// Update fan PWM duty cycle based on the CPU temperature
     fn update_duty_cycle(session: &mut IpmiSession, zone_config: &Zone) -> Result<()> {
-        let max_cpu_temp = Self::get_max_temp(&mut session.ipmi, &zone_config.sources)?;
+        let max_temp = Self::get_max_temp(&mut session.ipmi, &zone_config.sources)?;
 
-        let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&max_cpu_temp));
+        let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&max_temp));
         // Index of first step >= the current temperature (if exists)
         let above_index = match result {
             Ok(i) => Some(i),
@@ -196,7 +196,7 @@ impl MainApp {
                     .unwrap_or(100);
 
                 Step {
-                    temp: max_cpu_temp,
+                    temp: max_temp,
                     dcycle,
                 }
             }
@@ -211,7 +211,7 @@ impl MainApp {
             below_step.dcycle
         } else {
             // Linearly scale the dcycle
-            (u32::from(max_cpu_temp - below_step.temp)
+            (u32::from(max_temp - below_step.temp)
                 * u32::from(above_step.dcycle - below_step.dcycle)
                 / u32::from(above_step.temp - below_step.temp)
                 + u32::from(below_step.dcycle)) as u8
@@ -221,8 +221,8 @@ impl MainApp {
             let dcycle_cur = session.ipmi.get_duty_cycle(*z)
                 .context(IpmiError)?;
 
-            info!("[{}] Zone {}: cpu_temp={}C, dcycle_cur={}%, dcycle_new={}%",
-                  session.name, z, max_cpu_temp, dcycle_cur, dcycle_new);
+            info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
+                  session.name, z, max_temp, dcycle_cur, dcycle_new);
 
             session.ipmi.set_duty_cycle(*z, dcycle_new)
                 .context(IpmiError)?;
