@@ -32,6 +32,15 @@ sources = [
     { type = "smart", block_dev = "/dev/disk/by-id/..." },
 ]
 
+# Method of aggregating the temperatures from all of the sources. By default,
+# the maximum temperature is used. It is also possible to use the average
+# temperature. In case there are lower-bound outliers in the temperature
+# readings, the `top` parameter can be set to only consider the `n` highest
+# temperatures.
+#aggregation = { type = "maximum" }
+#aggregation = { type = "average" }
+#aggregation = { type = "average", top = 3 }
+
 # List of steps for mapping temperatures to duty cycles. The temperatures are
 # in degrees Celsius and the PWM duty cycles are fan speed percentages. At 0%
 # duty cycle, the fans are completely turned off and at 100% duty cycle, the
@@ -60,7 +69,11 @@ steps = [
 #[[zones]]
 #ipmi_zones = [1]
 #interval = 5
-#sensors = ["CPU2 Temp"]
+#sources = [
+#    { type = "smart", block_dev = "/dev/disk/by-id/..." },
+#    { type = "smart", block_dev = "/dev/disk/by-id/..." },
+#]
+#aggregation = { type = "average" }
 #steps = [
 #    { temp = 30, dcycle = 30 },
 #    { temp = 70, dcycle = 70 },

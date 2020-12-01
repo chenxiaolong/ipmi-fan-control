@@ -4,6 +4,7 @@ mod source;
 mod ipmi;
 
 use std::{
+    cmp::{self, Reverse},
     collections::HashMap,
     ffi::OsStr,
     io,
@@ -27,7 +28,7 @@ use tokio::{
     time::sleep,
 };
 
-use config::{Config, Source, Step, Zone, load_config};
+use config::{Aggregation, Config, load_config, Step, Zone};
 use error::*;
 use ipmi::{FanMode, Ipmi};
 use source::get_source_readings;
@@ -247,9 +248,9 @@ impl MainApp {
 
     /// Update fan PWM duty cycle based on the CPU temperature
     fn update_duty_cycle(session: Arc<IpmiSession>, zone_config: &Zone) -> Result<()> {
-        let max_temp = Self::get_max_temp(session.ipmi.clone(), &zone_config.sources)?;
+        let temp = Self::get_temp(session.ipmi.clone(), zone_config)?;
 
-        let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&max_temp));
+        let result = zone_config.steps.binary_search_by(|s| s.temp.cmp(&temp));
         // Index of first step >= the current temperature (if exists)
         let above_index = match result {
             Ok(i) => Some(i),
@@ -271,7 +272,7 @@ impl MainApp {
                     .unwrap_or(100);
 
                 Step {
-                    temp: max_temp,
+                    temp,
                     dcycle,
                 }
             }
@@ -286,7 +287,7 @@ impl MainApp {
             below_step.dcycle
         } else {
             // Linearly scale the dcycle
-            (u32::from(max_temp - below_step.temp)
+            (u32::from(temp - below_step.temp)
                 * u32::from(above_step.dcycle - below_step.dcycle)
                 / u32::from(above_step.temp - below_step.temp)
                 + u32::from(below_step.dcycle)) as u8
@@ -299,7 +300,7 @@ impl MainApp {
                 .context(IpmiError)?;
 
             info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
-                  session.name, z, max_temp, dcycle_cur, dcycle_new);
+                  session.name, z, temp, dcycle_cur, dcycle_new);
 
             ipmi_lock.set_duty_cycle(*z, dcycle_new)
                 .context(IpmiError)?;
@@ -308,13 +309,34 @@ impl MainApp {
         Ok(())
     }
 
-    /// Get maximum temperature sensor value in degrees Celsius.
-    fn get_max_temp(ipmi: Arc<Mutex<Ipmi>>, sources: &[Source]) -> Result<u8> {
-        get_source_readings(ipmi, sources)?
+    /// Get temperature sensor value in degrees Celsius using the zone's
+    /// data aggregation method.
+    fn get_temp(ipmi: Arc<Mutex<Ipmi>>, zone_config: &Zone) -> Result<u8> {
+        let mut readings = get_source_readings(ipmi, &zone_config.sources)?
             .into_iter()
             .filter_map(|r| r)
-            .max()
-            .ok_or(Error::NoValidReadings)
+            .collect::<Vec<_>>();
+        readings.sort_by_key(|r| Reverse(*r));
+
+        match zone_config.aggregation {
+            Aggregation::Maximum => {
+                readings.first().copied().ok_or(Error::NoValidReadings)
+            }
+            Aggregation::Average { top } => {
+                let n = cmp::min(top.unwrap_or(readings.len()), readings.len());
+                if n == 0 {
+                    return Err(Error::NoValidReadings);
+                }
+
+                let sum = readings
+                    .into_iter()
+                    .take(n)
+                    .map(|v| v as u32)
+                    .sum::<u32>();
+
+                Ok((sum as f32 / n as f32) as u8)
+            }
+        }
     }
 }
 
