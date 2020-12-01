@@ -58,6 +58,21 @@ pub enum Source {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
+pub enum Aggregation {
+    Maximum,
+    Average {
+        top: Option<usize>,
+    },
+}
+
+impl Default for Aggregation {
+    fn default() -> Self {
+        Self::Maximum
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Zone {
     #[serde(default)]
@@ -66,6 +81,8 @@ pub struct Zone {
     pub interval: Interval,
     pub ipmi_zones: Vec<u8>,
     pub sources: Vec<Source>,
+    #[serde(default)]
+    pub aggregation: Aggregation,
     pub steps: Vec<Step>,
 }
 
@@ -124,6 +141,13 @@ pub fn load_config(path: &Path) -> Result<Config> {
             return Err(Error::ConfigValidationError {
                 path: path.to_owned(),
                 reason: format!("zones[{}].session: {:?} does not exist", i, zone_config.session.0),
+            });
+        }
+
+        if matches!(zone_config.aggregation, Aggregation::Average { top: Some(0) }) {
+            return Err(Error::ConfigValidationError {
+                path: path.to_owned(),
+                reason: format!("zones[{}].aggregation[type=average].top: must be greater than 0", i),
             });
         }
 
