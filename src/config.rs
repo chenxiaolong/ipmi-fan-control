@@ -108,7 +108,7 @@ pub fn load_config(path: &Path) -> Result<Config> {
 
     // Create default session
     config.sessions.0.entry(SessionName::default().0)
-        .or_insert(vec![]);
+        .or_insert_with(Vec::new);
 
     if config.zones.is_empty() {
         return Err(Error::ConfigValidationError {

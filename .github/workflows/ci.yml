@@ -1,0 +1,51 @@
+---
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+jobs:
+  build_and_upload:
+    name: Build and archive artifacts
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_TERM_COLOR: always
+    strategy:
+      fail-fast: false
+      matrix:
+        # Once Windows support is complete, windows-latest can be added
+        os: [ubuntu-latest]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Get Rust LLVM target triple
+        id: get_target
+        shell: bash
+        run: |
+          echo -n '::set-output name=name::'
+          RUSTC_BOOTSTRAP=1 rustc -Z unstable-options --print target-spec-json \
+              | jq -r '."llvm-target"'
+
+      - name: Install clippy
+        run: rustup component add clippy
+
+      - name: Run clippy checks in debug mode
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          cargo clippy -- -D warnings
+
+      - name: Build in debug mode
+        run: cargo build --verbose
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ipmi-fan-control-${{ steps.get_target.outputs.name }}
+          path: |
+            target/debug/ipmi-fan-control.exe
+            target/debug/ipmi-fan-control.pdb
+            target/debug/ipmi-fan-control
