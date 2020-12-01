@@ -12,11 +12,10 @@ edition = "2018"
 
 [dependencies]
 env_logger = "0.8.2"
-gcd = "2.0.1"
+futures = "0.3.8"
 log = "0.4.11"
 rexpect = "0.4.0"
 serde_json = "1.0.59"
-signal-hook = "0.2.1"
 snafu = "0.6.9"
 structopt = "0.3.20"
 toml = "0.5"
@@ -24,3 +23,7 @@ toml = "0.5"
 [dependencies.serde]
 version = "1.0.117"
 features = ["derive"]
+
+[dependencies.tokio]
+version = "0.3.4"
+features = ["full"]

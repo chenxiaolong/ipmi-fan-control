@@ -6,6 +6,7 @@ use std::{
 };
 
 use snafu::Snafu;
+use tokio::task::JoinError;
 
 use crate::ipmi;
 
@@ -42,6 +43,10 @@ pub enum Error {
     IoError {
         path: PathBuf,
         source: io::Error,
+    },
+    #[snafu(display("Zone monitor loop panicked: {}", source))]
+    LoopPanicked {
+        source: JoinError,
     },
 }
 

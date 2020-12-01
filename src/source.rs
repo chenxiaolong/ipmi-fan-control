@@ -4,6 +4,7 @@ use std::{
     fs,
     path::Path,
     process::{Command, Stdio},
+    sync::{Arc, Mutex},
 };
 
 use snafu::ResultExt;
@@ -16,7 +17,7 @@ use crate::ipmi::{Ipmi, SensorReading};
 /// if smartctl fails to run or if the output can't be parsed as JSON. If the
 /// SMART data does not include the temperature or if the reported temperature
 /// exceeds the bounds of a `u8`, then `Ok(None)` is returned.
- fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
+fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
     let proc = Command::new("smartctl")
         .arg("-j")
         .arg("-A")
@@ -63,10 +64,15 @@ fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<Option<u8>> {
 /// function only fails if the IPMI sensor query fails. If a sensor's unit is
 /// not degrees Celsius or if the value exceeds the bounds of a `u8`, then the
 /// reported value of that sensor will be `None`.
-fn parse_ipmi_sources<'a, T: AsRef<str>>(ipmi: &mut Ipmi, sensors: &'a [T])
+fn parse_ipmi_sources<'a, T: AsRef<str>>(ipmi: Arc<Mutex<Ipmi>>, sensors: &'a [T])
     -> Result<HashMap<&'a str, Option<u8>>>
 {
-    let ipmi_readings = ipmi.get_sensor_readings(sensors)
+    if sensors.is_empty() {
+        return Ok(HashMap::default());
+    }
+
+    let mut ipmi_lock = ipmi.lock().unwrap();
+    let ipmi_readings = ipmi_lock.get_sensor_readings(sensors)
         .context(IpmiError)?
         .into_iter()
         .collect::<Result<Vec<SensorReading>, _>>()
@@ -90,7 +96,9 @@ fn parse_ipmi_sources<'a, T: AsRef<str>>(ipmi: &mut Ipmi, sensors: &'a [T])
 
 /// Get temperature readings for the given sources. The returned values are in
 /// the same order as given.
-pub fn get_source_readings(ipmi: &mut Ipmi, sources: &[Source]) -> Result<Vec<Option<u8>>> {
+pub fn get_source_readings(ipmi: Arc<Mutex<Ipmi>>, sources: &[Source])
+    -> Result<Vec<Option<u8>>>
+{
     // Get IPMI sensor readings in one go for better performance.
     let ipmi_sensors = sources.iter()
         .filter_map(|s| {
