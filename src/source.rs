@@ -32,9 +32,11 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
     let status = proc.wait()
         .context(IoError { path: "(smartctl)".to_owned() })?;
 
-    if !status.success() {
-        return Err(Error::CommandError { command: "smartctl".into(), status });
-    }
+    match status.code() {
+        // smartctl will return status code 2 when a drive is in standby
+        Some(0) | Some(2) => {},
+        _ => return Err(Error::CommandError { command: "smartctl".into(), status }),
+     }
 
     let root: serde_json::Value = result
         .context(SmartParseError { block_dev: block_dev.as_ref().to_owned() })?;
