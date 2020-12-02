@@ -2,6 +2,7 @@ use std::{
     io,
     num::ParseIntError,
     path::PathBuf,
+    process::ExitStatus,
     result,
 };
 
@@ -35,6 +36,11 @@ pub enum Error {
     },
     #[snafu(display("No sensors had valid temperature readings"))]
     NoValidReadings,
+    #[snafu(display("Failed to run {:?}: {}", command, status))]
+    CommandError {
+        command: PathBuf,
+        status: ExitStatus,
+    },
     #[snafu(display("IPMI error: {}", source))]
     IpmiError {
         source: ipmi::Error,

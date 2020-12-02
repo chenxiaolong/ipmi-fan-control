@@ -18,7 +18,7 @@ use crate::ipmi::{Ipmi, SensorReading};
 /// SMART data does not include the temperature or if the reported temperature
 /// exceeds the bounds of a `u8`, then `Ok(None)` is returned.
 fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
-    let proc = Command::new("smartctl")
+    let mut proc = Command::new("smartctl")
         .arg("-j")
         .arg("-A")
         .arg("-n")
@@ -28,7 +28,15 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
         .spawn()
         .context(IoError { path: "(smartctl)".to_owned() })?;
 
-    let root: serde_json::Value = serde_json::from_reader(proc.stdout.unwrap())
+    let result = serde_json::from_reader(proc.stdout.take().unwrap());
+    let status = proc.wait()
+        .context(IoError { path: "(smartctl)".to_owned() })?;
+
+    if !status.success() {
+        return Err(Error::CommandError { command: "smartctl".into(), status });
+    }
+
+    let root: serde_json::Value = result
         .context(SmartParseError { block_dev: block_dev.as_ref().to_owned() })?;
 
     let temperature = root
