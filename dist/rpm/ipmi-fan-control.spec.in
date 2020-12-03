@@ -1,21 +1,39 @@
+%global _version @VERSION@
+%global _plus_rev @PLUS_REV@
+%global _git_commit @GIT_COMMIT@
+%global _tarball_name @TARBALL_NAME@
+
+%global _suffix %{?_plus_rev:.r%{_plus_rev}}%{?_git_commit:.git%{_git_commit}}
+
 %global _summary SuperMicro IPMI fan control daemon
 
 Name:           ipmi-fan-control
-Version:        0.2.0
-Release:        1%{?dist}
+Version:        %{_version}
+Release:        1%{?_suffix}%{?dist}
 Summary:        %{_summary}
 
 # Upstream license specification: GPL-3.0-or-later
 License:        GPLv3+
 URL:            https://github.com/chenxiaolong/%{name}
-Source:         https://github.com/chenxiaolong/%{name}/archive/v%{version}.tar.gz
+Source:         %{_tarball_name}
+Source1:        ipmi-fan-control.service
 
+%if 0%{?fedora}
 ExclusiveArch:  %{rust_arches}
 
 # We're explicitly not using the macros from here because we want to download
 # dependencies from the internet
 BuildRequires:  rust-packaging
+%else
+BuildRequires:  cargo
+%endif
+
+%if 0%{?rhel} < 8
+BuildRequires:  systemd
+%else
 BuildRequires:  systemd-rpm-macros
+%{systemd_requires}
+%endif
 
 Requires:       ipmitool
 Requires:       smartmontools >= 7.0
@@ -24,10 +42,12 @@ Requires:       smartmontools >= 7.0
 %{_summary}
 
 %prep
-%autosetup -p1
+%autosetup -p1 -n %{name}-%{_version}%{?_suffix}
 
 %build
+%if 0%{?fedora}
 export RUSTFLAGS="%{__global_rustflags}"
+%endif
 cargo build --release
 
 %install
@@ -36,18 +56,14 @@ install -D -m 0755 target/release/%{name} \
 
 # systemd service
 install -d -m 0755 %{buildroot}%{_unitdir}
-cat > %{buildroot}%{_unitdir}/%{name}.service << EOF
-[Unit]
-Description=%{_summary}
+sed \
+    -e 's|@BINDIR@|%{_bindir}|g' \
+    -e 's|@SYSCONFDIR@|%{_sysconfdir}|g' \
+    < %{SOURCE1} \
+    > %{buildroot}%{_unitdir}/%{name}.service
 
-[Service]
-ExecStart=%{_bindir}/%{name} -c %{_sysconfdir}/%{name}.toml
-Restart=on-failure
-KillMode=process
-
-[Install]
-WantedBy=multi-user.target
-EOF
+install -D -m 0644 config.sample.toml \
+    %{buildroot}%{_sysconfdir}/%{name}.toml
 
 %post
 %systemd_post %{name}.service
@@ -60,18 +76,9 @@ EOF
 
 %files
 %doc README.md
-%doc config.sample.toml
 %license LICENSE
+%config %{_sysconfdir}/%{name}.toml
 %{_bindir}/%{name}
 %{_unitdir}/%{name}.service
 
 %changelog
-* Sat Oct 26 2019 Andrew Gunnerson <andrewgunnerson@gmail.com> - 0.2.0-1
-- Add support for multiple temperature/dcycle steps
-- Add config file validation
-
-* Thu Oct 24 2019 Andrew Gunnerson <andrewgunnerson@gmail.com> - 0.1.1-1
-- Set KillMode=process
-
-* Thu Oct 24 2019 Andrew Gunnerson <andrewgunnerson@gmail.com> - 0.1.0-1
-- Initial package
