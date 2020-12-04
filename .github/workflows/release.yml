@@ -50,7 +50,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v2
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Get Rust LLVM target triple
         id: get_target
@@ -102,3 +102,23 @@ jobs:
           asset_name: ${{ env.ASSET }}
           asset_path: ${{ env.ASSET }}
           asset_content_type: application/octet-stream
+
+      - name: Build source packages
+        run: ./dist/build_source_package.sh -t srpm
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Publish source package to Fedora Copr
+        env:
+          COPR_CONFIG: ${{ secrets.copr }}
+        run: |
+          echo "${COPR_CONFIG}" > dist/output/copr
+          python -m pip install --upgrade pip
+          pip install copr-cli
+          copr-cli --config dist/output/copr \
+              build \
+              chenxiaolong/ipmi-fan-control \
+              dist/output/rpm/*.src.rpm

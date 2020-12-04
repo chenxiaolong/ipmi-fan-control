@@ -19,7 +19,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v2
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Get Rust LLVM target triple
         id: get_target
@@ -49,3 +49,8 @@ jobs:
             target/debug/ipmi-fan-control.exe
             target/debug/ipmi-fan-control.pdb
             target/debug/ipmi-fan-control
+
+      - name: Test building all source packages
+        run: |
+          ./dist/build_source_package.sh -t tarball
+          ./dist/build_source_package.sh -t srpm
