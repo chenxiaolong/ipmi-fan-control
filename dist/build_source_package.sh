@@ -51,6 +51,7 @@ check_tools() {
         for cmd in "${missing[@]}"; do
             echo >&2 "- ${cmd}"
         done
+        exit 1
     fi
 }
 
@@ -70,7 +71,7 @@ build_tarball() {
 
 # Build source RPM for Fedora/CentOS
 build_srpm() {
-    check_tools mock
+    check_tools rpmbuild
 
     mkdir -p "${temp_dir}"/rpm/{SOURCES,SPECS}
     sed \
