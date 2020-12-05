@@ -104,6 +104,8 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Build source packages
+        env:
+          VERSION_OVERRIDE: ${{ needs.create_release.outputs.version }}
         run: ./dist/build_source_package.sh -t srpm
 
       - name: Set up Python
