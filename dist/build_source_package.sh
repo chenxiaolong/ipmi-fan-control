@@ -13,19 +13,28 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # - full_version: ${version}.r${plus_rev}.git${git_commit}
 compute_version() {
     local raw_version
+    local components
 
-    raw_version=$(git describe --long)
+    if [[ -n "${VERSION_OVERRIDE:-}" ]]; then
+        raw_version=${VERSION_OVERRIDE}
+    else
+        raw_version=$(git describe --long)
+    fi
 
-    version=${raw_version%%-*}
-    version=${version#v}
-    raw_version=${raw_version#*-}
+    IFS='-' read -r -a components <<< "${raw_version}"
 
-    plus_rev=${raw_version%%-*}
-    raw_version=${raw_version#*-}
+    version=${components[0]}
+    plus_rev=${components[1]:-}
+    git_commit=${components[2]:-}
+    git_commit=${git_commit#g}
 
-    git_commit=${raw_version#g}
-
-    full_version=${version}.r${plus_rev}.git${git_commit}
+    full_version=${version}
+    if [[ -n "${plus_rev}" ]]; then
+        full_version+=.r${plus_rev}
+    fi
+    if [[ -n "${git_commit}" ]]; then
+        full_version+=.git${git_commit}
+    fi
 }
 
 check_tools() {
