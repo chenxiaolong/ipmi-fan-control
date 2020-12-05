@@ -5,6 +5,13 @@ ipmi-fan-control is a program written in Rust to control the fans of a SuperMicr
 
 _Note_: This has only been tested on a 6028U-TR4T+, which uses the X10DRU-i+ motherboard. Also, only Linux is supported currently.
 
+Installation
+------------
+
+Fedora packages are available at this official Copr repository: https://copr.fedorainfracloud.org/coprs/chenxiaolong/ipmi-fan-control/.
+
+For other Linux distros or Unix-like systems, follow the instructions in the next section to build from source. Windows is currently not supported.
+
 Building
 --------
 
@@ -40,4 +47,4 @@ TODO
 ----
 
 * Use libfreeipmi directly instead of interacting with `ipmitool shell` with rexpect. If the ipmitool shell UI changes, ipmi-fan-control will most likely break.
-* Possibly add support for other OS's. They could use the IPMI's network interface. The main blocker would be setting up a `^C`/termination handler on Windows.
+* Add support for Windows.
