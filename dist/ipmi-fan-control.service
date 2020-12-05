@@ -1,0 +1,10 @@
+[Unit]
+Description=SuperMicro IPMI fan control daemon
+
+[Service]
+ExecStart=@BINDIR@/ipmi-fan-control -c @SYSCONFDIR@/ipmi-fan-control.toml
+Restart=on-failure
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
