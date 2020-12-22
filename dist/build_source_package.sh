@@ -60,13 +60,12 @@ build_tarball() {
     local prefix="ipmi-fan-control-${full_version}"
     tarball="${output_dir}/${prefix}.tar.gz"
 
-    pushd "$(git rev-parse --show-toplevel)"
-    git archive \
+    git -C "$(git rev-parse --show-toplevel)" \
+        archive \
         --format tar.gz \
         --prefix "${prefix}/" \
         --output "${tarball}" \
         HEAD
-    popd
 }
 
 # Build source RPM for Fedora/CentOS
