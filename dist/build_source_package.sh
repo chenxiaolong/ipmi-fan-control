@@ -109,6 +109,37 @@ build_pkgbuild() {
     cp -v "${temp_dir}"/pkgbuild/* "${output_dir}"/pkgbuild/
 }
 
+# Build deb source package for Debian/Ubuntu
+build_dsc() {
+    check_tools dch debuild
+
+    cp "${tarball}" "${temp_dir}/ipmi-fan-control_${full_version}.orig.tar.gz"
+    tar -xf "${tarball}" -C "${temp_dir}"
+
+    local source_dir="${temp_dir}/ipmi-fan-control-${full_version}"
+
+    cp -r debian "${source_dir}"/
+    cp ipmi-fan-control.service.in "${source_dir}"/debian/
+
+    pushd "${temp_dir}/ipmi-fan-control-${full_version}" >/dev/null
+
+    # Create dummy changelog
+    DEBFULLNAME=none \
+    DEBEMAIL=none@none.none \
+    dch \
+        --create \
+        -v "${full_version}-1" \
+        --package ipmi-fan-control \
+        "Automatically built from version ${full_version}"
+
+    debuild -S -us -uc
+
+    popd >/dev/null
+
+    mkdir -p "${output_dir}"/debian
+    cp -v "${temp_dir}"/*.{debian.tar.*,orig.tar.*,dsc} "${output_dir}"/debian/
+}
+
 clean_up() {
     if [[ "${keep_temp_dir}" == true ]]; then
         echo >&2 "Skipping deletion of temp directory: ${temp_dir}"
@@ -128,6 +159,7 @@ help() {
     echo '  tarball  - Build a source tarball using "git archive"'
     echo '  srpm     - Build an SRPM'
     echo '  pkgbuild - Build a PKGBUILD'
+    echo '  dsc      - Build a deb source package'
 }
 
 parse_args() {
@@ -180,6 +212,9 @@ parse_args() {
         ;;
     pkgbuild)
         actions+=(tarball pkgbuild)
+        ;;
+    dsc)
+        actions+=(tarball dsc)
         ;;
     '')
         echo >&2 "No target specified"

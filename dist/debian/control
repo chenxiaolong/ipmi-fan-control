@@ -1,0 +1,27 @@
+Source: ipmi-fan-control
+Section: misc
+Priority: optional
+Build-Depends:
+ debhelper (>= 12),
+ dh-exec,
+ cargo:native,
+ rustc:native,
+Maintainer: none <none@none.none>
+Standards-Version: 4.5.1
+Vcs-Git: https://github.com/chenxiaolong/ipmi-fan-control.git
+Vcs-Browser: https://github.com/chenxiaolong/ipmi-fan-control
+Homepage: https://github.com/chenxiaolong/ipmi-fan-control
+Rules-Requires-Root: no
+
+Package: ipmi-fan-control
+Architecture: any
+Multi-Arch: allowed
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+ ipmitool,
+Recommends:
+ smartmontools (>= 7.0),
+Description: SuperMicro IPMI fan control daemon
+ ipmi-fan-control is a program written in Rust to control the fans of a
+ SuperMicro rack mount server based on the readings of temperature sensors.

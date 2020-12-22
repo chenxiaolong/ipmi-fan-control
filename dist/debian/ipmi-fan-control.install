@@ -1,0 +1,3 @@
+#!/usr/bin/dh-exec
+target/release/ipmi-fan-control => /usr/bin/ipmi-fan-control
+config.sample.toml => /etc/ipmi-fan-control.toml
