@@ -92,6 +92,24 @@ build_srpm() {
     cp -v "${temp_dir}"/rpm/SRPMS/*.src.rpm "${output_dir}"/rpm/
 }
 
+build_pkgbuild() {
+    check_tools updpkgsums
+
+    mkdir -p "${temp_dir}"/pkgbuild
+    sed \
+        -e "s/@VERSION@/${full_version}/g" \
+        -e "s/@TARBALL_NAME@/$(basename "${tarball}")/g" \
+        < pkgbuild/PKGBUILD.in \
+        > "${temp_dir}"/pkgbuild/PKGBUILD
+
+    cp "${tarball}" "${temp_dir}"/pkgbuild/
+
+    updpkgsums "${temp_dir}/pkgbuild/PKGBUILD"
+
+    mkdir -p "${output_dir}"/pkgbuild
+    cp -v "${temp_dir}"/pkgbuild/* "${output_dir}"/pkgbuild/
+}
+
 clean_up() {
     rm -r "${temp_dir}"
 }
@@ -103,8 +121,9 @@ help() {
     echo '  -t, --target  Type of source package to build'
     echo
     echo 'Valid targets:'
-    echo '  tarball - Build a source tarball using "git archive"'
-    echo '  srpm    - Build an SRPM'
+    echo '  tarball  - Build a source tarball using "git archive"'
+    echo '  srpm     - Build an SRPM'
+    echo '  pkgbuild - Build a PKGBUILD'
 }
 
 parse_args() {
@@ -148,6 +167,9 @@ parse_args() {
         ;;
     srpm)
         actions+=(tarball srpm)
+        ;;
+    pkgbuild)
+        actions+=(tarball pkgbuild)
         ;;
     '')
         echo >&2 "No target specified"
