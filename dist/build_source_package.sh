@@ -80,7 +80,7 @@ build_srpm() {
         -e "s/@TARBALL_NAME@/$(basename "${tarball}")/g" \
         < rpm/ipmi-fan-control.spec.in \
         > "${temp_dir}"/rpm/SPECS/ipmi-fan-control.spec
-    cp ipmi-fan-control.service "${temp_dir}"/rpm/SOURCES/
+    cp ipmi-fan-control.service.in "${temp_dir}"/rpm/SOURCES/
     cp "${tarball}" "${temp_dir}"/rpm/SOURCES/
 
     rpmbuild \

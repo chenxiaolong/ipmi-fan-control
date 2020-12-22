@@ -28,7 +28,7 @@ Summary:        %{_summary}
 License:        GPLv3+
 URL:            https://github.com/chenxiaolong/%{name}
 Source:         %{_tarball_name}
-Source1:        ipmi-fan-control.service
+Source1:        ipmi-fan-control.service.in
 
 %if 0%{?fedora}
 ExclusiveArch:  %{rust_arches}
