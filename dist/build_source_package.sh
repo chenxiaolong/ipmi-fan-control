@@ -95,26 +95,19 @@ build_srpm() {
 build_pkgbuild() {
     check_tools updpkgsums
 
-    mkdir -p "${temp_dir}"/pkg
+    mkdir -p "${temp_dir}"/pkgbuild
     sed \
         -e "s/@VERSION@/${full_version}/g" \
         -e "s/@TARBALL_NAME@/$(basename "${tarball}")/g" \
-        < pkg/PKGBUILD.in \
-        > "${temp_dir}"/pkg/PKGBUILD
+        < pkgbuild/PKGBUILD.in \
+        > "${temp_dir}"/pkgbuild/PKGBUILD
 
-    sed \
-        -e "s/@BINDIR@/\/usr\/bin/g" \
-        -e "s/@SYSCONFDIR@/\/etc/g" \
-        < ipmi-fan-control.service \
-        > "${temp_dir}"/pkg/ipmi-fan-control.service
+    cp "${tarball}" "${temp_dir}"/pkgbuild/
 
+    updpkgsums "${temp_dir}/pkgbuild/PKGBUILD"
 
-    cp "${tarball}" "${temp_dir}"/pkg/
-
-    updpkgsums "${temp_dir}/pkg/PKGBUILD"
-
-    mkdir -p "${output_dir}"/pkg
-    cp -v "${temp_dir}"/pkg/* "${output_dir}"/pkg/
+    mkdir -p "${output_dir}"/pkgbuild
+    cp -v "${temp_dir}"/pkgbuild/* "${output_dir}"/pkgbuild/
 }
 
 clean_up() {
