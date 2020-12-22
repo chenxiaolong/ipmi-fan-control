@@ -1,0 +1,32 @@
+# Maintainer: Christopher Hoage <iam@chrishoage.com>
+
+pkgname=ipmi-fan-control
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="SuperMicro IPMI fan control daemon"
+url="https://github.com/chenxiaolong/$pkgname"
+source=("@TARBALL_NAME@" "ipmi-fan-control.service")
+backup=("etc/$pkgname.toml")
+arch=("x86_64")
+license=("GPLv3+")
+makedepends=("cargo")
+optdepends=("ipmitool" "smartmontools")
+sha256sums=(
+  "dc6fa88529fee2dacfe2b09fdeaa1e392c8a45e9821011231a60e76235a64d77"
+  "84fa667ae48ade2e8276c1abcfeea37428ccfa247544cb82c68f7c472b2897d7"
+)
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+
+  cargo build --release
+}
+
+package() {
+  install -m755 -d "${pkgdir}/usr/lib/systemd/system/"
+  install -Dm644 ipmi-fan-control.service "${pkgdir}/usr/lib/systemd/system/"
+
+  cd "$srcdir/$pkgname-$pkgver"
+  install -Dm755 "target/release/$pkgname" "${pkgdir}/usr/bin/$pkgname"
+  install -Dm 644 config.sample.toml "${pkgdir}/etc/${pkgname}.toml"
+}

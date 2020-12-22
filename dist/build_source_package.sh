@@ -92,6 +92,31 @@ build_srpm() {
     cp -v "${temp_dir}"/rpm/SRPMS/*.src.rpm "${output_dir}"/rpm/
 }
 
+build_pkgbuild() {
+    check_tools updpkgsums
+
+    mkdir -p "${temp_dir}"/pkg
+    sed \
+        -e "s/@VERSION@/${full_version}/g" \
+        -e "s/@TARBALL_NAME@/$(basename "${tarball}")/g" \
+        < pkg/PKGBUILD.in \
+        > "${temp_dir}"/pkg/PKGBUILD
+
+    sed \
+        -e "s/@BINDIR@/\/usr\/bin/g" \
+        -e "s/@SYSCONFDIR@/\/etc/g" \
+        < ipmi-fan-control.service \
+        > "${temp_dir}"/pkg/ipmi-fan-control.service
+
+
+    cp "${tarball}" "${temp_dir}"/pkg/
+
+    updpkgsums "${temp_dir}/pkg/PKGBUILD"
+
+    mkdir -p "${output_dir}"/pkg
+    cp -v "${temp_dir}"/pkg/* "${output_dir}"/pkg/
+}
+
 clean_up() {
     rm -r "${temp_dir}"
 }
@@ -103,8 +128,9 @@ help() {
     echo '  -t, --target  Type of source package to build'
     echo
     echo 'Valid targets:'
-    echo '  tarball - Build a source tarball using "git archive"'
-    echo '  srpm    - Build an SRPM'
+    echo '  tarball  - Build a source tarball using "git archive"'
+    echo '  srpm     - Build an SRPM'
+    echo '  pkgbuild - Build a PKGBUILD'
 }
 
 parse_args() {
@@ -148,6 +174,9 @@ parse_args() {
         ;;
     srpm)
         actions+=(tarball srpm)
+        ;;
+    pkgbuild)
+        actions+=(tarball pkgbuild)
         ;;
     '')
         echo >&2 "No target specified"
