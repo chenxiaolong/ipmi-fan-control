@@ -30,7 +30,7 @@ package() {
   sed \
       -e "s/@BINDIR@/\/usr\/bin/g" \
       -e "s/@SYSCONFDIR@/\/etc/g" \
-      < dist/ipmi-fan-control.service \
+      < dist/ipmi-fan-control.service.in \
       > "${srcdir}"/ipmi-fan-control.service
 
   install -Dm644 "${srcdir}"/ipmi-fan-control.service "${pkgdir}/usr/lib/systemd/system/"
