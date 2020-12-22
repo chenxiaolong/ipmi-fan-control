@@ -23,7 +23,7 @@ compute_version() {
 
     IFS='-' read -r -a components <<< "${raw_version}"
 
-    version=${components[0]}
+    version=${components[0]#v}
     plus_rev=${components[1]:-}
     git_commit=${components[2]:-}
     git_commit=${git_commit#g}
