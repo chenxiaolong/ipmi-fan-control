@@ -111,7 +111,7 @@ build_pkgbuild() {
 
 clean_up() {
     if [[ "${keep_temp_dir}" == true ]]; then
-        echo >&2 "Skipping deletion of temp directory: $(readlink -f "${temp_dir}")"
+        echo >&2 "Skipping deletion of temp directory: ${temp_dir}"
     else
         rm -r "${temp_dir}"
     fi
@@ -201,7 +201,7 @@ parse_args "${@}"
 output_dir=$(pwd)/output
 mkdir -p "${output_dir}"
 
-temp_dir=$(mktemp -d -p .)
+temp_dir=$(mktemp -d -p "$(pwd)")
 trap clean_up EXIT
 
 compute_version
