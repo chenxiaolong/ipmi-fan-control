@@ -110,14 +110,19 @@ build_pkgbuild() {
 }
 
 clean_up() {
-    rm -r "${temp_dir}"
+    if [[ "${keep_temp_dir}" == true ]]; then
+        echo >&2 "Skipping deletion of temp directory: $(readlink -f "${temp_dir}")"
+    else
+        rm -r "${temp_dir}"
+    fi
 }
 
 help() {
     echo "Usage: ${0} -t <target> [<option>...]"
     echo
     echo 'Options:'
-    echo '  -t, --target  Type of source package to build'
+    echo '  -t, --target         Type of source package to build'
+    echo '  -k, --keep-temp-dir  Do not delete temp directory on exit'
     echo
     echo 'Valid targets:'
     echo '  tarball  - Build a source tarball using "git archive"'
@@ -127,7 +132,7 @@ help() {
 
 parse_args() {
     local args target=
-    if ! args=$(getopt -o ht: -l help,target: -n "${0}" -- "${@}"); then
+    if ! args=$(getopt -o hkt: -l help,keep-temp-dir,target: -n "${0}" -- "${@}"); then
         echo >&2 'Failed to parse arguments'
         help >&2
         exit 1
@@ -135,11 +140,17 @@ parse_args() {
 
     eval set -- "${args}"
 
+    keep_temp_dir=false
+
     while true; do
         case "${1}" in
         -h|--help)
             help
             exit
+            ;;
+        -k|--keep-temp-dir)
+            keep_temp_dir=true
+            shift 1
             ;;
         -t|--target)
             target=${2}
