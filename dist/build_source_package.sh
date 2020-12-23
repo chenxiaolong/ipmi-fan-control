@@ -112,6 +112,10 @@ build_pkgbuild() {
 # Build deb source package for Debian/Ubuntu
 build_dsc() {
     check_tools dch debuild
+    # These are here to make the build fail faster. Building a source package
+    # requires all build deps to be installed because the process runs
+    # `debian/rules clean`.
+    check_tools cargo dh-exec
 
     cp "${tarball}" "${temp_dir}/ipmi-fan-control_${full_version}.orig.tar.gz"
     tar -xf "${tarball}" -C "${temp_dir}"
