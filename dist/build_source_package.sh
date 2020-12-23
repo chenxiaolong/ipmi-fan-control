@@ -149,7 +149,11 @@ build_dsc() {
     popd >/dev/null
 
     mkdir -p "${output_dir}"/debian
-    cp -v "${temp_dir}"/*.{debian.tar.*,orig.tar.*,dsc} "${output_dir}"/debian/
+    find "${temp_dir}" \
+        -mindepth 1 \
+        -maxdepth 1 \
+        -type f \
+        -exec cp -t "${output_dir}"/debian/ '{}' '+'
 }
 
 clean_up() {
