@@ -127,13 +127,21 @@ build_dsc() {
 
     pushd "${temp_dir}/ipmi-fan-control-${full_version}" >/dev/null
 
+    # The target distro and version suffix might be set to make the source
+    # package uploadable.
+    local -a dch_extra_args=()
+    if [[ -n "${dsc_distro}" ]]; then
+        dch_extra_args+=(-D "${dsc_distro}")
+    fi
+
     # Create dummy changelog
     DEBFULLNAME=none \
     DEBEMAIL=none@none.none \
     dch \
         --create \
-        -v "${full_version}-1" \
         --package ipmi-fan-control \
+        -v "${full_version}-1${dsc_suffix}" \
+        "${dch_extra_args[@]}" \
         "Automatically built from version ${full_version}"
 
     debuild -S -us -uc
@@ -159,16 +167,39 @@ help() {
     echo '  -t, --target         Type of source package to build'
     echo '  -k, --keep-temp-dir  Do not delete temp directory on exit'
     echo
+    echo 'dsc-only options:'
+    echo '  -d, --distro         Target distro for dsc package upload'
+    echo '  -s, --suffix         Version suffix for dsc package upload'
+    echo
     echo 'Valid targets:'
     echo '  tarball  - Build a source tarball using "git archive"'
     echo '  srpm     - Build an SRPM'
     echo '  pkgbuild - Build a PKGBUILD'
     echo '  dsc      - Build a deb source package'
+    echo
+    echo 'NOTE: "-d" and "-s" are only useful when building Debian source'
+    echo 'packages that are meant to be uploaded to eg. launchpad.net where the'
+    echo 'same repo is used for multiple distro versions. "-d" specifies the'
+    echo 'target distro name (eg. "focal") and "-s" specifies a version suffix'
+    echo '(eg. "~ubuntu20.04") that makes the version number unique.'
+}
+
+in_array() {
+    local item needle=${1}
+    shift 1
+
+    for item in "${@}"; do
+        if [[ "${item}" == "${needle}" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
 }
 
 parse_args() {
     local args target=
-    if ! args=$(getopt -o hkt: -l help,keep-temp-dir,target: -n "${0}" -- "${@}"); then
+    if ! args=$(getopt -o d:hks:t: -l distro:,help,keep-temp-dir,suffix:,target: -n "${0}" -- "${@}"); then
         echo >&2 'Failed to parse arguments'
         help >&2
         exit 1
@@ -177,9 +208,15 @@ parse_args() {
     eval set -- "${args}"
 
     keep_temp_dir=false
+    dsc_distro=
+    dsc_suffix=
 
     while true; do
         case "${1}" in
+        -d|--distro)
+            dsc_distro=${2}
+            shift 2
+            ;;
         -h|--help)
             help
             exit
@@ -187,6 +224,10 @@ parse_args() {
         -k|--keep-temp-dir)
             keep_temp_dir=true
             shift 1
+            ;;
+        -s|--suffix)
+            dsc_suffix=${2}
+            shift 2
             ;;
         -t|--target)
             target=${2}
@@ -231,6 +272,12 @@ parse_args() {
         exit 1
         ;;
     esac
+
+    if ! in_array dsc "${actions[@]}" \
+            && [[ -n "${dsc_distro}" || -n "${dsc_suffix}" ]]; then
+        echo >&2 "-d/--distro and -s/--suffix can only used when building a dsc source package."
+        exit 1
+    fi
 }
 
 ###
