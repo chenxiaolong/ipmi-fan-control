@@ -31,6 +31,8 @@ Source:         %{_tarball_name}
 Source1:        ipmi-fan-control.service.in
 
 %if 0%{?fedora}
+# OBS fails to evaluate this to determine if the package should even be built
+%{!?rust_arches: %define rust_arches x86_64}
 ExclusiveArch:  %{rust_arches}
 
 # We're explicitly not using the macros from here because we want to download
