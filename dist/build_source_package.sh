@@ -143,16 +143,20 @@ build_dsc() {
 
     pushd "${temp_dir}/ipmi-fan-control-${full_version}" >/dev/null
 
+    local -a dch_extra_args=() debuild_extra_args=()
+
     # The target distro and version suffix might be set to make the source
     # package uploadable.
-    local -a dch_extra_args=()
     if [[ -n "${dsc_distro}" ]]; then
         dch_extra_args+=(-D "${dsc_distro}")
     fi
 
+    if [[ "${dsc_signed}" != true ]]; then
+        dch_extra_args+=(-M)
+        debuild_extra_args+=(-us -uc)
+    fi
+
     # Create dummy changelog
-    DEBFULLNAME=none \
-    DEBEMAIL=none@none.none \
     dch \
         --create \
         --package ipmi-fan-control \
@@ -160,7 +164,7 @@ build_dsc() {
         "${dch_extra_args[@]}" \
         "Automatically built from version ${full_version}"
 
-    debuild -S -us -uc
+    debuild -S "${debuild_extra_args[@]}"
 
     popd >/dev/null
 
@@ -188,8 +192,9 @@ help() {
     echo '  -k, --keep-temp-dir  Do not delete temp directory on exit'
     echo
     echo 'dsc-only options:'
-    echo '  -d, --distro         Target distro for dsc package upload'
-    echo '  -s, --suffix         Version suffix for dsc package upload'
+    echo '  --dsc-distro NAME    Target distro for dsc package upload'
+    echo '  --dsc-suffix SUFFIX  Version suffix for dsc package upload'
+    echo '  --dsc-signed         Create signed dsc/changes files'
     echo
     echo 'Valid targets:'
     echo '  tarball  - Build a source tarball using "git archive"'
@@ -197,11 +202,17 @@ help() {
     echo '  pkgbuild - Build a PKGBUILD'
     echo '  dsc      - Build a deb source package'
     echo
-    echo 'NOTE: "-d" and "-s" are only useful when building Debian source'
-    echo 'packages that are meant to be uploaded to eg. launchpad.net where the'
-    echo 'same repo is used for multiple distro versions. "-d" specifies the'
-    echo 'target distro name (eg. "focal") and "-s" specifies a version suffix'
-    echo '(eg. "~ubuntu20.04") that makes the version number unique.'
+    echo 'Debian-specific notes:'
+    echo '  The --dsc-distro and --dsc-suffix options are only useful when'
+    echo '  building Debian source packages that are meant to be uploaded to'
+    echo '  eg. launchpad.net where the same repo is used for multiple distro'
+    echo '  versions. --dsc-distro specifies the target distro name (eg. "focal")'
+    echo '  and --dsc-suffix specifies a version suffix (eg. "~ubuntu20.04") that'
+    echo '  makes the version number unique.'
+    echo
+    echo '  If --dsc-signed is specified, then the resulting .dsc and .changes'
+    echo '  files will be signed. This requires DEBFULLNAME and DEBEMAIL to'
+    echo '  match the signing GPG key.'
 }
 
 in_array() {
@@ -219,7 +230,7 @@ in_array() {
 
 parse_args() {
     local args target=
-    if ! args=$(getopt -o d:hks:t: -l distro:,help,keep-temp-dir,suffix:,target: -n "${0}" -- "${@}"); then
+    if ! args=$(getopt -o hkt: -l dsc-distro:,dsc-signed,dsc-suffix:,help,keep-temp-dir,target: -n "${0}" -- "${@}"); then
         echo >&2 'Failed to parse arguments'
         help >&2
         exit 1
@@ -228,15 +239,12 @@ parse_args() {
     eval set -- "${args}"
 
     keep_temp_dir=false
+    dsc_signed=false
     dsc_distro=
     dsc_suffix=
 
     while true; do
         case "${1}" in
-        -d|--distro)
-            dsc_distro=${2}
-            shift 2
-            ;;
         -h|--help)
             help
             exit
@@ -245,12 +253,20 @@ parse_args() {
             keep_temp_dir=true
             shift 1
             ;;
-        -s|--suffix)
-            dsc_suffix=${2}
-            shift 2
-            ;;
         -t|--target)
             target=${2}
+            shift 2
+            ;;
+        --dsc-distro)
+            dsc_distro=${2}
+            shift 2
+            ;;
+        --dsc-signed)
+            dsc_signed=true
+            shift
+            ;;
+        --dsc-suffix)
+            dsc_suffix=${2}
             shift 2
             ;;
         --)
@@ -294,8 +310,8 @@ parse_args() {
     esac
 
     if ! in_array dsc "${actions[@]}" \
-            && [[ -n "${dsc_distro}" || -n "${dsc_suffix}" ]]; then
-        echo >&2 "-d/--distro and -s/--suffix can only used when building a dsc source package."
+            && [[ -n "${dsc_distro}" || -n "${dsc_suffix}" || "${dsc_signed}" != false ]]; then
+        echo >&2 "--dsc-* options can only used when building a dsc source package."
         exit 1
     fi
 }
