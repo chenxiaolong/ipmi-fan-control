@@ -58,14 +58,30 @@ check_tools() {
 # Build tarball to be used for all distro's packaging
 build_tarball() {
     local prefix="ipmi-fan-control-${full_version}"
-    tarball="${output_dir}/${prefix}.tar.gz"
+    tarball="${output_dir}/${prefix}.vendored.tar.xz"
+
+    local staging_dir="${temp_dir}/tarball/${prefix}"
+    mkdir -p "${staging_dir}"
 
     git -C "$(git rev-parse --show-toplevel)" \
         archive \
-        --format tar.gz \
-        --prefix "${prefix}/" \
-        --output "${tarball}" \
-        HEAD
+        --format tar \
+        HEAD \
+        | tar -C "${staging_dir}" -xf -
+
+    # Include all dependencies into the tarball because build services like
+    # launchpad.net and build.opensuse.org do not allow internet access during
+    # builds.
+    pushd "${staging_dir}" >/dev/null
+    cargo vendor
+    # Remove prebuilt winapi libraries
+    rm -r vendor/winapi-*/lib
+    popd >/dev/null
+
+    mkdir "${staging_dir}"/.cargo
+    cp cargo.vendored.toml "${staging_dir}"/.cargo/config
+
+    tar -C "${temp_dir}/tarball" -Jcvf "${tarball}" "${prefix}"
 }
 
 # Build source RPM for Fedora/CentOS
@@ -117,7 +133,7 @@ build_dsc() {
     # `debian/rules clean`.
     check_tools cargo dh-exec
 
-    cp "${tarball}" "${temp_dir}/ipmi-fan-control_${full_version}.orig.tar.gz"
+    cp "${tarball}" "${temp_dir}/ipmi-fan-control_${full_version}.orig.tar.xz"
     tar -xf "${tarball}" -C "${temp_dir}"
 
     local source_dir="${temp_dir}/ipmi-fan-control-${full_version}"
