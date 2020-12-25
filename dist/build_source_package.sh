@@ -93,7 +93,7 @@ build_tarball() {
         --group 0 \
         --numeric-owner \
         --pax-option 'exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime' \
-        -Jcvf "${tarball}" \
+        -Jcf "${tarball}" \
         "${prefix}"
 }
 
