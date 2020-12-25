@@ -10,7 +10,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # - version: Base tag name
 # - plus_rev: Number of commits since tag (0 if building tag)
 # - git_commit: git short commit ID of HEAD
-# - full_version: ${version}.r${plus_rev}.git${git_commit}
+# - version_suffix: .r${plus_rev}.git${git_commit}
+# - full_version: ${version}${version_suffix}
 compute_version() {
     local raw_version
     local components
@@ -28,13 +29,15 @@ compute_version() {
     git_commit=${components[2]:-}
     git_commit=${git_commit#g}
 
-    full_version=${version}
+    version_suffix=
     if [[ -n "${plus_rev}" ]]; then
-        full_version+=.r${plus_rev}
+        version_suffix+=.r${plus_rev}
     fi
     if [[ -n "${git_commit}" ]]; then
-        full_version+=.git${git_commit}
+        version_suffix+=.git${git_commit}
     fi
+
+    full_version=${version}${version_suffix}
 }
 
 check_tools() {
@@ -91,8 +94,7 @@ build_srpm() {
     mkdir -p "${temp_dir}"/rpm/{SOURCES,SPECS}
     sed \
         -e "s/@VERSION@/${version}/g" \
-        -e "s/@PLUS_REV@/${plus_rev}/g" \
-        -e "s/@GIT_COMMIT@/${git_commit}/g" \
+        -e "s/@SUFFIX@/${version_suffix}/g" \
         -e "s/@TARBALL_NAME@/$(basename "${tarball}")/g" \
         < rpm/ipmi-fan-control.spec.in \
         > "${temp_dir}"/rpm/SPECS/ipmi-fan-control.spec
@@ -132,7 +134,10 @@ build_dsc() {
     # `debian/rules clean`.
     check_tools cargo dh-exec
 
-    cp "${tarball}" "${temp_dir}/ipmi-fan-control_${full_version}.orig.tar.xz"
+    # Debian/Ubuntu seem to prefer plusses over dots for git versions
+    local deb_full_version=${version}${version_suffix//./+}
+
+    cp "${tarball}" "${temp_dir}/ipmi-fan-control_${deb_full_version}.orig.tar.xz"
     tar -xf "${tarball}" -C "${temp_dir}"
 
     local source_dir="${temp_dir}/ipmi-fan-control-${full_version}"
@@ -159,7 +164,7 @@ build_dsc() {
     dch \
         --create \
         --package ipmi-fan-control \
-        -v "${full_version}-1${dsc_suffix}" \
+        -v "${deb_full_version}-1${dsc_suffix}" \
         "${dch_extra_args[@]}" \
         "Automatically built from version ${full_version}"
 

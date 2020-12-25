@@ -1,21 +1,6 @@
 %global _version @VERSION@
+%global _suffix @SUFFIX@
 %global _tarball_name @TARBALL_NAME@
-
-%{lua:
-local plus_rev = "@PLUS_REV@"
-local git_commit = "@GIT_COMMIT@"
-local suffix = ''
-
-if plus_rev ~= '' then
-    suffix = suffix .. '.r' .. plus_rev
-end
-if git_commit ~= '' then
-    suffix = suffix .. '.git' .. git_commit
-end
-if suffix ~= '' then
-    print(rpm.expand('%define _suffix ' .. suffix))
-end
-}
 
 %global _summary SuperMicro IPMI fan control daemon
 
