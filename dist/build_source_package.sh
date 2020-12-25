@@ -84,7 +84,17 @@ build_tarball() {
     mkdir "${staging_dir}"/.cargo
     cp cargo.vendored.toml "${staging_dir}"/.cargo/config
 
-    tar -C "${temp_dir}/tarball" -Jcvf "${tarball}" "${prefix}"
+    # Create a byte-for-byte reproducible tarball
+    # See: https://reproducible-builds.org/docs/archives/
+    tar -C "${temp_dir}/tarball" \
+        --sort=name \
+        --mtime @0 \
+        --owner 0 \
+        --group 0 \
+        --numeric-owner \
+        --pax-option 'exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime' \
+        -Jcvf "${tarball}" \
+        "${prefix}"
 }
 
 # Build source RPM for Fedora/CentOS
