@@ -106,7 +106,13 @@ jobs:
       - name: Build source packages
         env:
           VERSION_OVERRIDE: ${{ needs.create_release.outputs.version }}
-        run: ./dist/build_source_package.sh -t srpm
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install cargo debhelper devscripts dh-exec
+          ./dist/build_source_package.sh -t tarball
+          ./dist/build_source_package.sh -t srpm
+          ./dist/build_source_package.sh -t pkgbuild
+          ./dist/build_source_package.sh -t dsc
 
       - name: Set up Python
         uses: actions/setup-python@v2
