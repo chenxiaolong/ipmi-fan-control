@@ -9,7 +9,7 @@ on:
 jobs:
   create_release:
     name: Create GitHub release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
@@ -45,7 +45,7 @@ jobs:
       fail-fast: false
       matrix:
         # Once Windows support is complete, windows-latest can be added
-        os: [ubuntu-latest]
+        os: [ubuntu-20.04]
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
@@ -73,7 +73,7 @@ jobs:
         run: cargo build --release --verbose
 
       - name: Strip release binary (non-Windows)
-        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'macos-latest'
         run: strip target/release/ipmi-fan-control
 
       - name: Build archive
