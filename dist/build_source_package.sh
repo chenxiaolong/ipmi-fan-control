@@ -108,18 +108,17 @@ build_srpm() {
 }
 
 build_pkgbuild() {
-    check_tools updpkgsums
+    tarball_sha256=$(sha256sum "${tarball}")
 
     mkdir -p "${temp_dir}"/pkgbuild
     sed \
         -e "s/@VERSION@/${full_version}/g" \
         -e "s/@TARBALL_NAME@/$(basename "${tarball}")/g" \
+        -e "s/@TARBALL_SHA256@/${tarball_sha256%% *}/g" \
         < pkgbuild/PKGBUILD.in \
         > "${temp_dir}"/pkgbuild/PKGBUILD
 
     cp "${tarball}" "${temp_dir}"/pkgbuild/
-
-    updpkgsums "${temp_dir}/pkgbuild/PKGBUILD"
 
     mkdir -p "${output_dir}"/pkgbuild
     cp -v "${temp_dir}"/pkgbuild/* "${output_dir}"/pkgbuild/
