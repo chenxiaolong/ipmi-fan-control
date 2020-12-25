@@ -1,5 +1,9 @@
 # Maintainer: Christopher Hoage <iam@chrishoage.com>
 
+# Temporarily work around package signing issue with zstd-compressed packages
+# See: https://github.com/openSUSE/open-build-service/pull/10570
+PKGEXT='.pkg.tar.xz'
+
 pkgname=ipmi-fan-control
 pkgver=@VERSION@
 pkgrel=1
