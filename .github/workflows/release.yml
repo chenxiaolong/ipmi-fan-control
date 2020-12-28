@@ -20,7 +20,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
               version=${GITHUB_REF#refs/tags/v}
           else
-              version=0.0.0-${GITHUB_REF#refs/heads/}
+              version=0.0.0.${GITHUB_REF#refs/heads/}
           fi
           echo "::set-output name=version::${version}"
 
@@ -126,7 +126,7 @@ jobs:
         run: |
           shopt -s extglob
 
-          if [[ "${VERSION}" == 0.0.0-* ]]; then
+          if [[ "${VERSION}" == 0.0.0.* ]]; then
               project=home:chenxiaolong-bot:test
           else
               project=home:chenxiaolong:ipmi-fan-control
