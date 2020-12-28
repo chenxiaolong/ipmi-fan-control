@@ -35,7 +35,11 @@ BuildRequires:  systemd-rpm-macros
 %endif
 
 Requires:       ipmitool
+%if 0%{?rhel} < 8
 Requires:       smartmontools >= 7.0
+%else
+Recommends:     smartmontools >= 7.0
+%endif
 
 %description
 %{_summary}
