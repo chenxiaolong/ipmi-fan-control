@@ -2,12 +2,10 @@
 %global _suffix @SUFFIX@
 %global _tarball_name @TARBALL_NAME@
 
-%global _summary SuperMicro IPMI fan control daemon
-
 Name:           ipmi-fan-control
 Version:        %{_version}
 Release:        1%{?_suffix}%{?dist}
-Summary:        %{_summary}
+Summary:        SuperMicro IPMI fan control daemon
 
 # Upstream license specification: GPL-3.0-or-later
 License:        GPLv3+
@@ -42,7 +40,8 @@ Recommends:     smartmontools >= 7.0
 %endif
 
 %description
-%{_summary}
+ipmi-fan-control is a program written in Rust to control the fans on SuperMicro
+motherboards based on the readings of temperature sensors.
 
 %prep
 %autosetup -p1 -n %{name}-%{_version}%{?_suffix}

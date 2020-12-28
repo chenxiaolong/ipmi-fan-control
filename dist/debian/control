@@ -23,5 +23,5 @@ Depends:
 Recommends:
  smartmontools (>= 7.0),
 Description: SuperMicro IPMI fan control daemon
- ipmi-fan-control is a program written in Rust to control the fans of a
- SuperMicro rack mount server based on the readings of temperature sensors.
+ ipmi-fan-control is a program written in Rust to control the fans on SuperMicro
+ motherboards based on the readings of temperature sensors.
