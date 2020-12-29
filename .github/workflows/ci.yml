@@ -5,8 +5,8 @@ on:
       - master
   pull_request:
 jobs:
-  build_and_upload:
-    name: Build and archive artifacts
+  build:
+    name: Build project
     runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
@@ -41,7 +41,18 @@ jobs:
       - name: Build in debug mode
         run: cargo build --verbose
 
-      - name: Test building all source packages
+  build_source_packages:
+    name: Build source packages
+    runs-on: ubuntu-20.04
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Build all source packages
         run: |
           sudo apt-get -y update
           sudo apt-get -y install cargo debhelper devscripts dh-exec

@@ -35,8 +35,8 @@ jobs:
           draft: false
           prerelease: false
 
-  build_and_upload:
-    name: Build and upload assets
+  build:
+    name: Build project
     needs: create_release
     runs-on: ${{ matrix.os }}
     env:
@@ -103,7 +103,23 @@ jobs:
           asset_path: ${{ env.ASSET }}
           asset_content_type: application/octet-stream
 
-      - name: Build source packages
+  build_source_packages:
+    name: Build source packages
+    needs:
+      - create_release
+      # Intentionally make this sequential, so we don't publish a release to OBS
+      # that doesn't build
+      - build
+    runs-on: ubuntu-20.04
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Build all source packages
         env:
           VERSION_OVERRIDE: ${{ needs.create_release.outputs.version }}
         run: |
