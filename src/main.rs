@@ -230,14 +230,6 @@ impl MainApp {
             let s = session.clone();
             let z = zone_config.clone();
 
-            // This might sometimes cause a panic when interrupted due to a
-            // tokio bug. It's still better than tokio::spawn_blocking because
-            // if this task is interrupted during the execution of
-            // tokio::spawn_blocking, the blocking task would be orphaned and
-            // would hold onto its Arc<IpmiSession>, causing the IpmiSession to
-            // not be dropped.
-            //
-            // See: https://github.com/tokio-rs/tokio/issues/2789
             task::block_in_place(move || {
                 Self::update_duty_cycle(s, z.as_ref())
             })?;
