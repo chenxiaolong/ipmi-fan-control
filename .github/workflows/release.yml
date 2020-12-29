@@ -139,6 +139,22 @@ jobs:
           cd ipmi-fan-control-*/
           cargo +1.41.0 check --release
 
+      - name: Find vendored tarball
+        run: |
+          tarball=(dist/output/*.vendored.tar.*)
+          echo "TARBALL_PATH=${tarball}" >> "${GITHUB_ENV}"
+          echo "TARBALL_NAME=${tarball##*/}" >> "${GITHUB_ENV}"
+
+      - name: Upload vendored tarball
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_name: ${{ env.TARBALL_NAME }}
+          asset_path: ${{ env.TARBALL_PATH }}
+          asset_content_type: application/octet-stream
+
       - name: Install osc
         run: |
           sudo apt-get -y update
