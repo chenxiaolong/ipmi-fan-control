@@ -4,7 +4,7 @@ description = "SuperMicro IPMI fan control daemon"
 repository = "https://github.com/chenxiaolong/ipmi-fan-control"
 readme = "README.md"
 license = "GPL-3.0-or-later"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Andrew Gunnerson <andrewgunnerson@gmail.com>"]
 edition = "2018"
 
