@@ -9,7 +9,7 @@ on:
 jobs:
   create_release:
     name: Create GitHub release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
@@ -20,7 +20,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
               version=${GITHUB_REF#refs/tags/v}
           else
-              version=0.0.0-${GITHUB_REF#refs/heads/}
+              version=0.0.0.${GITHUB_REF#refs/heads/}
           fi
           echo "::set-output name=version::${version}"
 
@@ -45,7 +45,7 @@ jobs:
       fail-fast: false
       matrix:
         # Once Windows support is complete, windows-latest can be added
-        os: [ubuntu-latest]
+        os: [ubuntu-20.04]
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
@@ -73,7 +73,7 @@ jobs:
         run: cargo build --release --verbose
 
       - name: Strip release binary (non-Windows)
-        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'macos-latest'
         run: strip target/release/ipmi-fan-control
 
       - name: Build archive
@@ -106,21 +106,44 @@ jobs:
       - name: Build source packages
         env:
           VERSION_OVERRIDE: ${{ needs.create_release.outputs.version }}
-        run: ./dist/build_source_package.sh -t srpm
-
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.x'
-
-      - name: Publish source package to Fedora Copr
-        env:
-          COPR_CONFIG: ${{ secrets.copr }}
         run: |
-          echo "${COPR_CONFIG}" > dist/output/copr
-          python -m pip install --upgrade pip
-          pip install copr-cli
-          copr-cli --config dist/output/copr \
-              build \
-              chenxiaolong/ipmi-fan-control \
-              dist/output/rpm/*.src.rpm
+          sudo apt-get -y update
+          sudo apt-get -y install cargo debhelper devscripts dh-exec
+          ./dist/build_source_package.sh -t tarball
+          ./dist/build_source_package.sh -t srpm
+          ./dist/build_source_package.sh -t pkgbuild
+          ./dist/build_source_package.sh -t dsc
+
+      - name: Install osc
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install libarchive-tools osc python3-m2crypto
+
+      - name: Publish source packages to OBS
+        env:
+          OSC_CONFIG: ${{ secrets.osc }}
+          VERSION: ${{ needs.create_release.outputs.version }}
+        run: |
+          shopt -s extglob
+
+          if [[ "${VERSION}" == 0.0.0.* ]]; then
+              project=home:chenxiaolong-bot:test
+          else
+              project=home:chenxiaolong:ipmi-fan-control
+          fi
+
+          cd dist/output
+          echo "${OSC_CONFIG}" > oscrc
+          osc -c oscrc co "${project}"
+
+          cd "${project}/ipmi-fan-control"
+          find -mindepth 1 -maxdepth 1 -type f -delete
+
+          bsdtar -xf ../../rpm/*.src.rpm
+          cp ../../pkgbuild/* .
+          cp ../../debian/!(*_source.*) .
+
+          sha512sum *
+
+          osc -c ../../oscrc addremove
+          osc -c ../../oscrc commit -m "GitHub Actions automated import of version ${VERSION}"

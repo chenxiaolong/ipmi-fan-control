@@ -1,0 +1,5 @@
+# debian/changelog will never reference a real Debian bug report
+ipmi-fan-control: new-package-should-close-itp-bug
+
+# We don't have a manpage yet
+ipmi-fan-control: binary-without-manpage

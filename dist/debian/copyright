@@ -1,0 +1,10 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: ipmi-fan-control
+Source: https://github.com/chenxiaolong/ipmi-fan-control
+
+Files: *
+Copyright: Copyright 2019-2020 Andrew Gunnerson <chillermillerlong@hotmail.com>
+License: GPL-3
+
+License: GPL-3
+ Please see /usr/share/common-licenses/GPL-3 for the full license text.

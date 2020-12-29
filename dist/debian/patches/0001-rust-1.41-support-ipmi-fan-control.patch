@@ -1,0 +1,18 @@
+--- a/src/config.rs
++++ b/src/config.rs
+@@ -10,6 +10,15 @@ use snafu::ResultExt;
+ 
+ use crate::error::*;
+ 
++macro_rules! matches {
++    ($expression:expr, $( $pattern:pat )|+ $( if $guard: expr )? $(,)?) => {
++        match $expression {
++            $( $pattern )|+ $( if $guard )? => true,
++            _ => false
++        }
++    }
++}
++
+ #[derive(Clone, Copy, Debug, Deserialize)]
+ pub struct Interval(pub u8);
+ 

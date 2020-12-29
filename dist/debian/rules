@@ -1,0 +1,22 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+override_dh_auto_configure:
+	sed \
+		-e 's|@BINDIR@|/usr/bin|g' \
+		-e 's|@SYSCONFDIR@|/etc|g' \
+		< debian/ipmi-fan-control.service.in \
+		> debian/ipmi-fan-control.service
+
+override_dh_auto_build:
+	cargo build --release
+
+override_dh_auto_clean:
+	cargo clean
+	rm -f debian/ipmi-fan-control.service
+
+override_dh_installsystemd:
+	# The sample config must be edited for anything to work, so don't enable or
+	# start the service on the initial installation.
+	dh_installsystemd --no-enable --no-start

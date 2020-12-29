@@ -1,28 +1,11 @@
 %global _version @VERSION@
+%global _suffix @SUFFIX@
 %global _tarball_name @TARBALL_NAME@
-
-%{lua:
-local plus_rev = "@PLUS_REV@"
-local git_commit = "@GIT_COMMIT@"
-local suffix = ''
-
-if plus_rev ~= '' then
-    suffix = suffix .. '.r' .. plus_rev
-end
-if git_commit ~= '' then
-    suffix = suffix .. '.git' .. git_commit
-end
-if suffix ~= '' then
-    print(rpm.expand('%define _suffix ' .. suffix))
-end
-}
-
-%global _summary SuperMicro IPMI fan control daemon
 
 Name:           ipmi-fan-control
 Version:        %{_version}
 Release:        1%{?_suffix}%{?dist}
-Summary:        %{_summary}
+Summary:        SuperMicro IPMI fan control daemon
 
 # Upstream license specification: GPL-3.0-or-later
 License:        GPLv3+
@@ -31,6 +14,8 @@ Source:         %{_tarball_name}
 Source1:        ipmi-fan-control.service.in
 
 %if 0%{?fedora}
+# OBS fails to evaluate this to determine if the package should even be built
+%{!?rust_arches: %define rust_arches x86_64}
 ExclusiveArch:  %{rust_arches}
 
 # We're explicitly not using the macros from here because we want to download
@@ -48,10 +33,15 @@ BuildRequires:  systemd-rpm-macros
 %endif
 
 Requires:       ipmitool
+%if 0%{?rhel} < 8
 Requires:       smartmontools >= 7.0
+%else
+Recommends:     smartmontools >= 7.0
+%endif
 
 %description
-%{_summary}
+ipmi-fan-control is a program written in Rust to control the fans on SuperMicro
+motherboards based on the readings of temperature sensors.
 
 %prep
 %autosetup -p1 -n %{name}-%{_version}%{?_suffix}

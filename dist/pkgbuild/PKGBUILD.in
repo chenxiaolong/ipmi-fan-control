@@ -1,5 +1,9 @@
 # Maintainer: Christopher Hoage <iam@chrishoage.com>
 
+# Temporarily work around package signing issue with zstd-compressed packages
+# See: https://github.com/openSUSE/open-build-service/pull/10570
+PKGEXT='.pkg.tar.xz'
+
 pkgname=ipmi-fan-control
 pkgver=@VERSION@
 pkgrel=1
@@ -12,9 +16,7 @@ license=("GPLv3+")
 makedepends=("cargo")
 depends=("ipmitool")
 optdepends=("smartmontools")
-sha256sums=(
-  "dc6fa88529fee2dacfe2b09fdeaa1e392c8a45e9821011231a60e76235a64d77"
-)
+sha256sums=("@TARBALL_SHA256@")
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
