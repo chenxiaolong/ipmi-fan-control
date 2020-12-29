@@ -1,16 +1,27 @@
 ipmi-fan-control
 ================
 
-ipmi-fan-control is a program written in Rust to control the fans of a SuperMicro rack mount server based on the readings of temperature sensors.
+ipmi-fan-control is a program written in Rust to control the fans on SuperMicro motherboards based on the readings of temperature sensors.
 
-_Note_: This has only been tested on a 6028U-TR4T+, which uses the X10DRU-i+ motherboard. Also, only Linux is supported currently.
+_Note_: This has primarily been tested on a 6028U-TR4T+, which uses the X10DRU-i+ motherboard. Also, only Linux and other Unix-like operating systems are currently supported.
 
 Installation
 ------------
 
-Fedora packages are available at this official Copr repository: https://copr.fedorainfracloud.org/coprs/chenxiaolong/ipmi-fan-control/.
+Prebuilt packages for Arch Linux, CentOS, Fedora, openSUSE, Debian, and Ubuntu are available from [OBS](https://build.opensuse.org/package/show/home:chenxiaolong:ipmi-fan-control/ipmi-fan-control). Please follow the instructions at [the repo's landing page](https://software.opensuse.org//download.html?project=home%3Achenxiaolong%3Aipmi-fan-control&package=ipmi-fan-control).
 
-For other Linux distros or Unix-like systems, follow the instructions in the next section to build from source. Windows is currently not supported.
+For Arch Linux, the instructions above don't enable verification of package signatures. To enable verification, remove `SigLevel = Never` under `[home_chenxiaolong_ipmi-fan-control_Arch]` in `/etc/pacman.conf` and then download and import the GPG key:
+
+```sh
+key=$(curl -sSL https://download.opensuse.org/repositories/home:/chenxiaolong:/ipmi-fan-control/Arch/x86_64/home_chenxiaolong_ipmi-fan-control_Arch.key)
+fingerprint=$(gpg --quiet --with-colons --import-options show-only --import --fingerprint <<< "${key}" | awk -F: '$1 == "fpr" { print $10 }')
+
+sudo pacman-key --init
+sudo pacman-key --add - <<< "${key}"
+sudo pacman-key --lsign-key "${fingerprint}"
+```
+
+For other Unix-like systems, follow the instructions in the next section to build from source. Windows is currently not supported.
 
 Building
 --------
@@ -27,14 +38,25 @@ or to make a release build, run:
 cargo build --release
 ```
 
+To build Linux distro-specific packages, first build the corresponding source package:
+
+```sh
+# SRPM for RPM-based distros
+./dist/build_source_package.sh -t srpm
+# PKGBUILD for Arch Linux
+./dist/build_source_package.sh -t pkgbuild
+# dsc for Debian-based distros
+./dist/build_source_package.sh -t dsc
+```
+
+and then use the distro's standard utilities for building the binary packages. The source packages will be placed in `dist/output/`.
+
 Running
 -------
 
-The only runtime dependency is `ipmitool`. It can be installed via your Linux distribution's package manager.
+If ipmi-fan-control was installed from a package, update `/etc/ipmi-fan-control.toml` to match the desired configuration and then enable and start the `ipmi-fan-control` systemd service.
 
-A config file is required for `ipmi-fan-control` to run. Make a copy of [`config.sample.toml`](config.sample.toml) and update the values to match your server's configuration. The configuration options are documented in the sample file.
-
-Once you have a config file, `ipmi-fan-control` can be run with:
+If built from source, make a copy of [`config.sample.toml`](config.sample.toml) and update the values to match your server's configuration. Then, make sure `ipmitool` is installed as it is required for controlling the fans. Finally, run `ipmi-fan-control` with:
 
 ```sh
 # Debug
