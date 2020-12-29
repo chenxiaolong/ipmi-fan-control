@@ -23,10 +23,10 @@ use log::{debug, error, info};
 use snafu::ResultExt;
 use structopt::StructOpt;
 use tokio::{
-    stream::StreamExt,
     task,
     time::sleep,
 };
+use tokio_stream::StreamExt;
 
 use config::{Aggregation, Config, load_config, Step, Zone};
 use error::*;
