@@ -41,15 +41,6 @@ jobs:
       - name: Build in debug mode
         run: cargo build --verbose
 
-      - name: Archive artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: ipmi-fan-control-${{ steps.get_target.outputs.name }}
-          path: |
-            target/debug/ipmi-fan-control.exe
-            target/debug/ipmi-fan-control.pdb
-            target/debug/ipmi-fan-control
-
       - name: Test building all source packages
         run: |
           sudo apt-get -y update
