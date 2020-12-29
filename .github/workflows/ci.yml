@@ -58,3 +58,12 @@ jobs:
           ./dist/build_source_package.sh -t srpm
           ./dist/build_source_package.sh -t pkgbuild
           ./dist/build_source_package.sh -t dsc
+
+      - name: Test building with Rust 1.41 backport patches
+        run: |
+          rustup install 1.41.0
+          mkdir temp
+          cd temp
+          dpkg-source -x ../dist/output/debian/*.dsc
+          cd ipmi-fan-control-*/
+          cargo +1.41.0 check
