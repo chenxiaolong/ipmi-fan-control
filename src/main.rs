@@ -15,10 +15,7 @@ use std::{
 };
 
 use env_logger::{self, Env};
-use futures::{
-    future::{Abortable, AbortHandle},
-    stream::FuturesUnordered,
-};
+use futures::stream::FuturesUnordered;
 use log::{debug, error, info};
 use snafu::ResultExt;
 use structopt::StructOpt;
@@ -153,20 +150,13 @@ impl MainApp {
     /// signal handlers (eg. ^C) or if a fatal error occurs.
     async fn run(&mut self) -> Result<()> {
         let mut loops = FuturesUnordered::new();
-        let mut aborts = Vec::new();
 
         for zone_config in &self.config.zones {
-            let (handle, registration) = AbortHandle::new_pair();
-
-            loops.push(tokio::spawn(Abortable::new(
-                Self::zone_loop(
-                    self.sessions.get_mut(&zone_config.session.0).unwrap().clone(),
-                    // Cloned since there's no structured concurrency support yet
-                    Arc::new(zone_config.clone()),
-                ),
-                registration,
+            loops.push(tokio::spawn(Self::zone_loop(
+                self.sessions.get_mut(&zone_config.session.0).unwrap().clone(),
+                // Cloned since there's no structured concurrency support yet
+                Arc::new(zone_config.clone()),
             )));
-            aborts.push(handle);
         }
 
         let mut first_result = None;
@@ -180,17 +170,21 @@ impl MainApp {
                     }
                     c.context(IoError { path: "(interrupt)" })
                 }
-                // Oh boy, this is an Option<Result<Result<Result<()>, Aborted>, JoinError>>
+                // Oh boy, this is an Option<Result<Result<()>, JoinError>>
                 r = loops.next() => {
                     match r {
                         // No tasks left
                         None => break,
-                        // The task panicked
-                        Some(Err(e)) => Err(e).context(LoopPanicked),
-                        // The task was aborted
-                        Some(Ok(Err(_))) => Ok(()),
+                        // The task panicked or was aborted
+                        Some(Err(e)) => {
+                            if e.is_cancelled() {
+                                Ok(())
+                            } else {
+                                Err(e).context(LoopPanicked)
+                            }
+                        },
                         // zone_loop's actual error return value
-                        Some(Ok(Ok(r))) => r,
+                        Some(Ok(r)) => r,
                     }
                 }
             };
@@ -206,7 +200,7 @@ impl MainApp {
             // they are dropped. Without the explicit aborts and joins, the
             // IpmiSession destructors might not run since the tasks would keep
             // the Arcs alive.
-            for handle in &aborts {
+            for handle in loops.iter_mut() {
                 handle.abort();
             }
         }
