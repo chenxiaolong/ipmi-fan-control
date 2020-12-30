@@ -35,8 +35,8 @@ jobs:
           draft: false
           prerelease: false
 
-  build_and_upload:
-    name: Build and upload assets
+  build:
+    name: Build project
     needs: create_release
     runs-on: ${{ matrix.os }}
     env:
@@ -72,28 +72,20 @@ jobs:
       - name: Build in release mode
         run: cargo build --release --verbose
 
-      - name: Strip release binary (non-Windows)
-        if: matrix.os == 'ubuntu-20.04' || matrix.os == 'macos-latest'
-        run: strip target/release/ipmi-fan-control
-
-      - name: Build archive
+      - name: Build Windows archive
+        if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           base_name=ipmi-fan-control-${{ needs.create_release.outputs.version }}-${{ steps.get_target.outputs.name }}
           mkdir "${base_name}"
-          cp {README.md,LICENSE} "${base_name}/"
+          cp {README.md,LICENSE,config.sample.toml} "${base_name}/"
 
-          if [[ "${{ matrix.os }}" == windows-* ]]; then
-              cp target/release/ipmi-fan-control.exe "${base_name}/"
-              7z a "${base_name}.zip" "${base_name}"
-              echo "ASSET=${base_name}.zip" >> "${GITHUB_ENV}"
-          else
-              cp target/release/ipmi-fan-control "${base_name}/"
-              tar -Jcvf "${base_name}.tar.xz" "${base_name}"
-              echo "ASSET=${base_name}.tar.xz" >> "${GITHUB_ENV}"
-          fi
+          cp target/release/ipmi-fan-control.exe "${base_name}/"
+          7z a "${base_name}.zip" "${base_name}"
+          echo "ASSET=${base_name}.zip" >> "${GITHUB_ENV}"
 
-      - name: Upload release assets
+      - name: Upload Windows archive
+        if: matrix.os == 'windows-latest'
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -103,7 +95,23 @@ jobs:
           asset_path: ${{ env.ASSET }}
           asset_content_type: application/octet-stream
 
-      - name: Build source packages
+  build_source_packages:
+    name: Build source packages
+    needs:
+      - create_release
+      # Intentionally make this sequential, so we don't publish a release to OBS
+      # that doesn't build
+      - build
+    runs-on: ubuntu-20.04
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Build all source packages
         env:
           VERSION_OVERRIDE: ${{ needs.create_release.outputs.version }}
         run: |
@@ -113,6 +121,31 @@ jobs:
           ./dist/build_source_package.sh -t srpm
           ./dist/build_source_package.sh -t pkgbuild
           ./dist/build_source_package.sh -t dsc
+
+      - name: Test building with Rust 1.41 backport patches
+        run: |
+          rustup install 1.41.0
+          mkdir temp
+          cd temp
+          dpkg-source -x ../dist/output/debian/*.dsc
+          cd ipmi-fan-control-*/
+          cargo +1.41.0 check --release
+
+      - name: Find vendored tarball
+        run: |
+          tarball=(dist/output/*.vendored.tar.*)
+          echo "TARBALL_PATH=${tarball}" >> "${GITHUB_ENV}"
+          echo "TARBALL_NAME=${tarball##*/}" >> "${GITHUB_ENV}"
+
+      - name: Upload vendored tarball
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_name: ${{ env.TARBALL_NAME }}
+          asset_path: ${{ env.TARBALL_PATH }}
+          asset_content_type: application/octet-stream
 
       - name: Install osc
         run: |

@@ -5,8 +5,8 @@ on:
       - master
   pull_request:
 jobs:
-  build_and_upload:
-    name: Build and archive artifacts
+  build:
+    name: Build project
     runs-on: ${{ matrix.os }}
     env:
       CARGO_TERM_COLOR: always
@@ -41,16 +41,18 @@ jobs:
       - name: Build in debug mode
         run: cargo build --verbose
 
-      - name: Archive artifacts
-        uses: actions/upload-artifact@v2
+  build_source_packages:
+    name: Build source packages
+    runs-on: ubuntu-20.04
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
         with:
-          name: ipmi-fan-control-${{ steps.get_target.outputs.name }}
-          path: |
-            target/debug/ipmi-fan-control.exe
-            target/debug/ipmi-fan-control.pdb
-            target/debug/ipmi-fan-control
+          fetch-depth: 0
 
-      - name: Test building all source packages
+      - name: Build all source packages
         run: |
           sudo apt-get -y update
           sudo apt-get -y install cargo debhelper devscripts dh-exec
@@ -58,3 +60,12 @@ jobs:
           ./dist/build_source_package.sh -t srpm
           ./dist/build_source_package.sh -t pkgbuild
           ./dist/build_source_package.sh -t dsc
+
+      - name: Test building with Rust 1.41 backport patches
+        run: |
+          rustup install 1.41.0
+          mkdir temp
+          cd temp
+          dpkg-source -x ../dist/output/debian/*.dsc
+          cd ipmi-fan-control-*/
+          cargo +1.41.0 check
