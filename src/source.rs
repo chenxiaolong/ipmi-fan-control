@@ -74,8 +74,8 @@ fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<Option<u8>> {
 /// function only fails if the IPMI sensor query fails. If a sensor's unit is
 /// not degrees Celsius or if the value exceeds the bounds of a `u8`, then the
 /// reported value of that sensor will be `None`.
-fn parse_ipmi_sources<'a, T: AsRef<str>>(ipmi: Arc<Mutex<Ipmi>>, sensors: &'a [T])
-    -> Result<HashMap<&'a str, Option<u8>>>
+fn parse_ipmi_sources<T: AsRef<str>>(ipmi: Arc<Mutex<Ipmi>>, sensors: &[T])
+    -> Result<HashMap<&str, Option<u8>>>
 {
     if sensors.is_empty() {
         return Ok(HashMap::default());
