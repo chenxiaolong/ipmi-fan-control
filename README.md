@@ -10,17 +10,6 @@ Installation
 
 Prebuilt packages for Arch Linux, CentOS, Fedora, openSUSE, Debian, and Ubuntu are available from [OBS](https://build.opensuse.org/package/show/home:chenxiaolong:ipmi-fan-control/ipmi-fan-control). Please follow the instructions at [the repo's landing page](https://software.opensuse.org//download.html?project=home%3Achenxiaolong%3Aipmi-fan-control&package=ipmi-fan-control).
 
-For Arch Linux, the instructions above don't enable verification of package signatures. To enable verification, remove `SigLevel = Never` under `[home_chenxiaolong_ipmi-fan-control_Arch]` in `/etc/pacman.conf` and then download and import the GPG key:
-
-```sh
-key=$(curl -sSL https://download.opensuse.org/repositories/home:/chenxiaolong:/ipmi-fan-control/Arch/x86_64/home_chenxiaolong_ipmi-fan-control_Arch.key)
-fingerprint=$(gpg --quiet --with-colons --import-options show-only --import --fingerprint <<< "${key}" | awk -F: '$1 == "fpr" { print $10 }')
-
-sudo pacman-key --init
-sudo pacman-key --add - <<< "${key}"
-sudo pacman-key --lsign-key "${fingerprint}"
-```
-
 For other Unix-like systems, follow the instructions in the next section to build from source. Windows is currently not supported.
 
 Building
