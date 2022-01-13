@@ -35,7 +35,7 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
     match status.code() {
         // smartctl will return status code 2 when a drive is in standby
         Some(0) | Some(2) => {},
-        _ => return Err(Error::CommandError { command: "smartctl".into(), status }),
+        _ => return Err(Error::Command { command: "smartctl".into(), status }),
      }
 
     let root: serde_json::Value = result

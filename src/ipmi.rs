@@ -15,12 +15,12 @@ use snafu::{ResultExt, Snafu};
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Failed to parse line '{}': {}", line, source))]
-    OutputParseError {
+    OutputParse {
         line: String,
         source: Box<dyn error::Error + 'static + Send + Sync>,
     },
     #[snafu(display("Failed to interact with ipmitool: {}", source))]
-    InteractionError {
+    Interaction {
         source: errors::Error,
     },
     #[snafu(display("Invalid argument: '{}'", arg))]

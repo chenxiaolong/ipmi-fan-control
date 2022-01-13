@@ -300,7 +300,7 @@ impl MainApp {
     fn get_temp(ipmi: Arc<Mutex<Ipmi>>, zone_config: &Zone) -> Result<u8> {
         let mut readings = get_source_readings(ipmi, &zone_config.sources)?
             .into_iter()
-            .filter_map(|r| r)
+            .flatten()
             .collect::<Vec<_>>();
         readings.sort_by_key(|r| Reverse(*r));
 
