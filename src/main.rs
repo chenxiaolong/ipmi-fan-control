@@ -76,14 +76,14 @@ impl IpmiSession {
         S: AsRef<OsStr>,
         R: IntoIterator<Item = u8>,
     {
-        let mut ipmi = Ipmi::with_args(args).context(IpmiError)?;
-        let orig_fan_mode = ipmi.get_fan_mode().context(IpmiError)?;
+        let mut ipmi = Ipmi::with_args(args).context(IpmiSnafu)?;
+        let orig_fan_mode = ipmi.get_fan_mode().context(IpmiSnafu)?;
 
         info!("[{}] Original fan mode: {:?}", name.as_ref(), orig_fan_mode);
         info!("[{}] Setting fan mode to: {:?}", name.as_ref(), FanMode::Full);
 
         ipmi.set_fan_mode(FanMode::Full)
-            .context(IpmiError)?;
+            .context(IpmiSnafu)?;
 
         Ok(Self {
             name: name.as_ref().to_owned(),
@@ -168,7 +168,7 @@ impl MainApp {
                     if c.is_ok() {
                         info!("Interrupted");
                     }
-                    c.context(IoError { path: "(interrupt)" })
+                    c.context(IoSnafu { path: "(interrupt)" })
                 }
                 // Oh boy, this is an Option<Result<Result<()>, JoinError>>
                 r = loops.next() => {
@@ -180,7 +180,7 @@ impl MainApp {
                             if e.is_cancelled() {
                                 Ok(())
                             } else {
-                                Err(e).context(LoopPanicked)
+                                Err(e).context(LoopPanickedSnafu)
                             }
                         },
                         // zone_loop's actual error return value
@@ -283,13 +283,13 @@ impl MainApp {
 
         for z in &zone_config.ipmi_zones {
             let dcycle_cur = ipmi_lock.get_duty_cycle(*z)
-                .context(IpmiError)?;
+                .context(IpmiSnafu)?;
 
             info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
                   session.name, z, temp, dcycle_cur, dcycle_new);
 
             ipmi_lock.set_duty_cycle(*z, dcycle_new)
-                .context(IpmiError)?;
+                .context(IpmiSnafu)?;
         }
 
         Ok(())
@@ -300,7 +300,7 @@ impl MainApp {
     fn get_temp(ipmi: Arc<Mutex<Ipmi>>, zone_config: &Zone) -> Result<u8> {
         let mut readings = get_source_readings(ipmi, &zone_config.sources)?
             .into_iter()
-            .filter_map(|r| r)
+            .flatten()
             .collect::<Vec<_>>();
         readings.sort_by_key(|r| Reverse(*r));
 

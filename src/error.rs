@@ -15,38 +15,38 @@ use crate::ipmi;
 #[snafu(visibility(pub(crate)))]
 pub enum Error {
     #[snafu(display("Failed to parse config {:?}: {}", path, source))]
-    ConfigParseError {
+    ConfigParse {
         path: PathBuf,
         source: toml::de::Error,
     },
     #[snafu(display("Failed to validate config {:?}: {}", path, reason))]
-    ConfigValidationError {
+    ConfigValidation {
         path: PathBuf,
         reason: String,
     },
     #[snafu(display("Failed to parse sensor value: '{}': {}", value, source))]
-    SensorValueParseError {
+    SensorValueParse {
         value: String,
         source: ParseIntError,
     },
     #[snafu(display("Failed to parse SMART output for block device {:?}: {}", block_dev, source))]
-    SmartParseError {
+    SmartParse {
         block_dev: PathBuf,
         source: serde_json::Error,
     },
     #[snafu(display("No sensors had valid temperature readings"))]
     NoValidReadings,
     #[snafu(display("Failed to run {:?}: {}", command, status))]
-    CommandError {
+    Command {
         command: PathBuf,
         status: ExitStatus,
     },
     #[snafu(display("IPMI error: {}", source))]
-    IpmiError {
+    Ipmi {
         source: ipmi::Error,
     },
     #[snafu(display("{:?}: {}", path, source))]
-    IoError {
+    Io {
         path: PathBuf,
         source: io::Error,
     },

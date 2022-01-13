@@ -26,20 +26,20 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
         .arg(block_dev.as_ref())
         .stdout(Stdio::piped())
         .spawn()
-        .context(IoError { path: "(smartctl)".to_owned() })?;
+        .context(IoSnafu { path: "(smartctl)".to_owned() })?;
 
     let result = serde_json::from_reader(proc.stdout.take().unwrap());
     let status = proc.wait()
-        .context(IoError { path: "(smartctl)".to_owned() })?;
+        .context(IoSnafu { path: "(smartctl)".to_owned() })?;
 
     match status.code() {
         // smartctl will return status code 2 when a drive is in standby
         Some(0) | Some(2) => {},
-        _ => return Err(Error::CommandError { command: "smartctl".into(), status }),
+        _ => return Err(Error::Command { command: "smartctl".into(), status }),
      }
 
     let root: serde_json::Value = result
-        .context(SmartParseError { block_dev: block_dev.as_ref().to_owned() })?;
+        .context(SmartParseSnafu { block_dev: block_dev.as_ref().to_owned() })?;
 
     let temperature = root
         .get("temperature")
@@ -56,13 +56,13 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
 /// the bounds of a `u8`, then `Ok(None)` is returned.
 fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<Option<u8>> {
     let contents = fs::read_to_string(path.as_ref())
-        .context(IoError { path: path.as_ref().to_owned() })?;
+        .context(IoSnafu { path: path.as_ref().to_owned() })?;
     let trimmed = contents.trim();
 
     // The file should be in milli-degrees Celsius
     let temperature = trimmed
         .parse::<u32>()
-        .context(SensorValueParseError { value: trimmed.to_owned() })?
+        .context(SensorValueParseSnafu { value: trimmed.to_owned() })?
         .checked_div(1000)
         .and_then(|t| t.try_into().ok());
 
@@ -83,10 +83,10 @@ fn parse_ipmi_sources<T: AsRef<str>>(ipmi: Arc<Mutex<Ipmi>>, sensors: &[T])
 
     let mut ipmi_lock = ipmi.lock().unwrap();
     let ipmi_readings = ipmi_lock.get_sensor_readings(sensors)
-        .context(IpmiError)?
+        .context(IpmiSnafu)?
         .into_iter()
         .collect::<Result<Vec<SensorReading>, _>>()
-        .context(IpmiError)?;
+        .context(IpmiSnafu)?;
 
     let result = ipmi_readings
         .into_iter()
