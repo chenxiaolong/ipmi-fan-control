@@ -99,10 +99,10 @@ pub struct Config {
 
 pub fn load_config(path: &Path) -> Result<Config> {
     let contents = fs::read_to_string(path)
-        .context(IoError { path })?;
+        .context(IoSnafu { path })?;
 
     let mut config: Config = toml::from_str(&contents)
-        .context(ConfigParseError { path })?;
+        .context(ConfigParseSnafu { path })?;
 
     // Validate config
 

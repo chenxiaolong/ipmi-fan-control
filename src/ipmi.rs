@@ -102,12 +102,12 @@ impl Ipmi {
             echo_on: false,
             prompt: "ipmitool> ".to_string(),
             pty_session: spawn_command(command, Some(2000))
-                .context(InteractionError)?,
+                .context(InteractionSnafu)?,
             quit_command: Some("exit".to_string()),
         };
 
         session.wait_for_prompt()
-            .context(InteractionError)?;
+            .context(InteractionSnafu)?;
 
         Ok(Self { session })
     }
@@ -117,9 +117,9 @@ impl Ipmi {
         debug!("Running IPMI command: '{}'", command);
 
         self.session.send_line(command)
-            .context(InteractionError)?;
+            .context(InteractionSnafu)?;
         self.session.wait_for_prompt()
-            .context(InteractionError)
+            .context(InteractionSnafu)
     }
 
     /// Get fan mode
@@ -128,7 +128,7 @@ impl Ipmi {
 
         let raw_mode = u8::from_str_radix(output.trim(), 16)
             .map_err(|x| x.into())
-            .context(OutputParseError { line: output })?;
+            .context(OutputParseSnafu { line: output })?;
 
         Ok(FanMode::from(raw_mode))
     }
@@ -146,7 +146,7 @@ impl Ipmi {
 
         let dcycle = u8::from_str_radix(output.trim(), 16)
             .map_err(|x| x.into())
-            .context(OutputParseError { line: output })?;
+            .context(OutputParseSnafu { line: output })?;
 
         Ok(dcycle)
     }
@@ -183,7 +183,7 @@ impl Ipmi {
         debug!("Running IPMI command: '{}'", command);
 
         self.session.send_line(&command)
-            .context(InteractionError)?;
+            .context(InteractionSnafu)?;
 
         let mut results = vec![];
 
@@ -191,14 +191,14 @@ impl Ipmi {
             let sensor = sensor.as_ref();
 
             let r = self.session.exp_regex(r#"(^|\n)(Sensor ID\s+:\s+|Unable to find sensor id ')"#)
-                .context(InteractionError)?;
+                .context(InteractionSnafu)?;
 
             let found = !r.1.trim_start().starts_with("Unable");
             let sensor_name = if found {
                 self.session.exp_string(" (")
             } else {
                 self.session.exp_char('\'')
-            }.context(InteractionError)?;
+            }.context(InteractionSnafu)?;
 
             if sensor_name != *sensor {
                 return Err(Error::DesyncedOutput {
@@ -209,17 +209,17 @@ impl Ipmi {
 
             if found {
                 self.session.exp_regex(r#"\n\s+Sensor Reading\s+:\s+"#)
-                    .context(InteractionError)?;
+                    .context(InteractionSnafu)?;
                 let (_, value) = self.session.exp_regex(r#"[\d\.]+"#)
-                    .context(InteractionError)?;
+                    .context(InteractionSnafu)?;
 
                 self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
-                    .context(InteractionError)?;
+                    .context(InteractionSnafu)?;
                 let units = self.session.read_line()
-                    .context(InteractionError)?;
+                    .context(InteractionSnafu)?;
 
                 self.session.exp_regex(r#"\r?\n\r?\n"#)
-                    .context(InteractionError)?;
+                    .context(InteractionSnafu)?;
 
                 results.push(Ok(SensorReading {
                     name: sensor_name.to_string(),
@@ -234,7 +234,7 @@ impl Ipmi {
         }
 
         self.session.wait_for_prompt()
-            .context(InteractionError)?;
+            .context(InteractionSnafu)?;
 
         Ok(results)
     }
