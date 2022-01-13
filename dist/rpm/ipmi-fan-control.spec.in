@@ -1,5 +1,5 @@
 %global _version @VERSION@
-%global _suffix @SUFFIX@ %{nil}
+%global _suffix @SUFFIX@%{nil}
 %global _tarball_name @TARBALL_NAME@
 
 Name:           ipmi-fan-control
