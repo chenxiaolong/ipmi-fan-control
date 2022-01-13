@@ -10,6 +10,18 @@ Installation
 
 Prebuilt packages for Arch Linux, CentOS, Fedora, openSUSE, Debian, and Ubuntu are available from [OBS](https://build.opensuse.org/package/show/home:chenxiaolong:ipmi-fan-control/ipmi-fan-control). Please follow the instructions at [the repo's landing page](https://software.opensuse.org//download.html?project=home%3Achenxiaolong%3Aipmi-fan-control&package=ipmi-fan-control).
 
+NOTE: Due to [a bug in the software.opensuse.org frontend](https://github.com/openSUSE/software-o-o/issues/1035), newer Fedora distros are listed as `Unknown` and the instructions for adding the repo are blank. If that's the case, use the following commands to add the Fedora repo and install the package:
+
+```bash
+# For stable Fedora versions
+version=$(rpm -E %fedora)
+# For Fedora Rawhide
+version=Rawhide
+
+sudo dnf config-manager --add-repo https://download.opensuse.org/repositories/home:chenxiaolong:ipmi-fan-control/Fedora_"${version}"/home:chenxiaolong:ipmi-fan-control.repo
+sudo dnf install ipmi-fan-control
+```
+
 For other Unix-like systems, follow the instructions in the next section to build from source. Windows is currently not supported.
 
 Building
