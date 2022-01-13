@@ -17,12 +17,11 @@ log = "0.4.14"
 rexpect = "0.4.0"
 serde_json = "1.0.74"
 snafu = "0.7.0"
+# We cannot switch to clap v3 because its MSRV is too high for the distros that
+# we provide binary packages for: https://github.com/clap-rs/clap/issues/3267
+structopt = "0.3.25"
 tokio-stream = "0.1.8"
 toml = "0.5.8"
-
-[dependencies.clap]
-version = "3.0.7"
-features = ["derive"]
 
 [dependencies.serde]
 version = "1.0.133"
