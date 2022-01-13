@@ -14,11 +14,11 @@ use std::{
     u8,
 };
 
-use clap::Parser;
 use env_logger::{self, Env};
 use futures::stream::FuturesUnordered;
 use log::{debug, error, info};
 use snafu::ResultExt;
+use structopt::StructOpt;
 use tokio::{
     task,
     time::sleep,
@@ -326,17 +326,17 @@ impl MainApp {
     }
 }
 
-#[derive(Debug, Parser)]
+#[derive(StructOpt, Debug)]
 struct Opt {
     /// Path to config file
-    #[clap(short, long)]
+    #[structopt(short, long)]
     config: PathBuf,
 }
 
 async fn main_wrapper() -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let opt = Opt::parse();
+    let opt = Opt::from_args();
 
     let config = load_config(&opt.config)?;
     debug!("Loaded config: {:#?}", config);
