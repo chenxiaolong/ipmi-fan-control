@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "ipmi-fan-control"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "env_logger",
  "futures",
