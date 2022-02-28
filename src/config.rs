@@ -11,7 +11,7 @@ use snafu::ResultExt;
 use crate::error::*;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
-pub struct Interval(pub u8);
+pub struct Interval(pub u16);
 
 impl Interval {
     pub fn to_duration(self) -> Duration {
