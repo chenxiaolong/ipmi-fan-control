@@ -1,6 +1,6 @@
 use std::{
-    error,
     ffi::OsStr,
+    num::ParseIntError,
     process::Command,
     result,
 };
@@ -10,50 +10,39 @@ use rexpect::{
     errors,
     session::{PtyReplSession, spawn_command},
 };
-use snafu::{ResultExt, Snafu};
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[snafu(display("Failed to parse line {:?}: {}", line, source))]
+    #[error("Failed to parse line {line:?}: {source}")]
     OutputParse {
         line: String,
-        source: Box<dyn error::Error + 'static + Send + Sync>,
+        source: ParseIntError,
     },
-    #[snafu(display("Failed to parse sensor output: {}: {}", details, source))]
+    #[error("Failed to parse sensor output: {details}: {source}")]
     SensorParse {
         details: String,
         source: errors::Error,
     },
-    #[snafu(display("Failed to spawn ipmitool: {}", source))]
-    Spawn {
-        source: errors::Error,
-    },
-    #[snafu(display("Failed to send ipmitool command: {}", source))]
-    SendCommand {
-        source: errors::Error,
-    },
-    #[snafu(display("ipmitool shell prompt not found: {}", source))]
-    PromptNotFound {
-        source: errors::Error,
-    },
-    #[snafu(display("Command exceeds maximum size of {}: {:?}", size, command))]
+    #[error("Failed to spawn ipmitool: {0}")]
+    Spawn(#[source] errors::Error),
+    #[error("Failed to send ipmitool command: {0}")]
+    SendCommand(#[source] errors::Error),
+    #[error("ipmitool shell prompt not found: {0}")]
+    PromptNotFound(#[source] errors::Error),
+    #[error("Command exceeds maximum size of {size}: {command:?}")]
     CommandTooLong {
         size: usize,
         command: String,
     },
-    #[snafu(display("Invalid argument: {:?}", arg))]
-    InvalidArgument {
-        arg: String,
-    },
-    #[snafu(display("Output is desynced: expected {:?}, but got {:?}", expected, got))]
+    #[error("Invalid argument: {0:?}")]
+    InvalidArgument(String),
+    #[error("Output is desynced: expected {expected:?}, but got {got:?}")]
     DesyncedOutput {
         expected: String,
         got: String,
     },
-    #[snafu(display("Sensor not found: {:?}", name))]
-    SensorNotFound {
-        name: String,
-    },
+    #[error("Sensor not found: {0:?}")]
+    SensorNotFound(String),
 }
 
 type Result<T, E = Error> = result::Result<T, E>;
@@ -129,12 +118,12 @@ impl Ipmi {
             echo_on: false,
             prompt: "ipmitool> ".to_string(),
             pty_session: spawn_command(command, Some(2000))
-                .context(SpawnSnafu)?,
+                .map_err(Error::Spawn)?,
             quit_command: Some("exit".to_string()),
         };
 
         session.wait_for_prompt()
-            .context(PromptNotFoundSnafu)?;
+            .map_err(Error::PromptNotFound)?;
 
         Ok(Self { session })
     }
@@ -171,7 +160,7 @@ impl Ipmi {
             }
 
             if arg.find(|c: char| c == '\'' || c == '"' || c == '\n').is_some() {
-                return Err(Error::InvalidArgument { arg: arg.to_string() });
+                return Err(Error::InvalidArgument(arg.to_string()));
             }
 
             if num_args > 0 {
@@ -212,9 +201,9 @@ impl Ipmi {
         debug!("Running IPMI command: {:?}", command);
 
         self.session.send_line(&command)
-            .context(SendCommandSnafu)?;
+            .map_err(Error::SendCommand)?;
         self.session.wait_for_prompt()
-            .context(PromptNotFoundSnafu)
+            .map_err(Error::PromptNotFound)
     }
 
     /// Get the current fan mode.
@@ -222,8 +211,7 @@ impl Ipmi {
         let output = self.execute(&["raw", "0x30", "0x45", "0"])?;
 
         let raw_mode = u8::from_str_radix(output.trim(), 16)
-            .map_err(|x| x.into())
-            .context(OutputParseSnafu { line: output })?;
+            .map_err(|e| Error::OutputParse { line: output, source: e })?;
 
         Ok(FanMode::from(raw_mode))
     }
@@ -242,8 +230,7 @@ impl Ipmi {
         let output = self.execute(&["raw", "0x30", "0x70", "0x66", "0", &zone.to_string()])?;
 
         let dcycle = u8::from_str_radix(output.trim(), 16)
-            .map_err(|x| x.into())
-            .context(OutputParseSnafu { line: output })?;
+            .map_err(|e| Error::OutputParse { line: output, source: e })?;
 
         Ok(dcycle)
     }
@@ -275,22 +262,28 @@ impl Ipmi {
         debug!("Running IPMI command: {:?}", command);
 
         self.session.send_line(&command)
-            .context(SendCommandSnafu)?;
+            .map_err(Error::SendCommand)?;
 
         let mut results = vec![];
+
+        macro_rules! e {
+            ($details:expr) => {
+                |e| Error::SensorParse { details: $details.to_string(), source: e }
+            }
+        }
 
         for sensor in sensors {
             let sensor = sensor.as_ref();
 
             let r = self.session.exp_regex(r#"(^|\n)(Sensor ID\s+:\s+|Unable to find sensor id ')"#)
-                .context(SensorParseSnafu { details: "ID line not found" })?;
+                .map_err(e!("ID line not found"))?;
 
             let found = !r.1.trim_start().starts_with("Unable");
             let sensor_name = if found {
                 self.session.exp_string(" (")
             } else {
                 self.session.exp_char('\'')
-            }.context(SensorParseSnafu { details: "Name not found" })?;
+            }.map_err(e!("Name not found"))?;
 
             if sensor_name != *sensor {
                 return Err(Error::DesyncedOutput {
@@ -301,21 +294,21 @@ impl Ipmi {
 
             if found {
                 self.session.exp_regex(r#"\n\s+Sensor Reading\s+:\s+"#)
-                    .context(SensorParseSnafu { details: "Reading line not found" })?;
+                    .map_err(e!("Reading line not found"))?;
                 let (_, value) = self.session.exp_regex(r#"[\d\.]+"#)
-                    .context(SensorParseSnafu { details: "Reading value not found" })?;
+                    .map_err(e!("Reading value not found"))?;
                 debug!("Sensor {:?} reading value: {:?}", sensor_name, value);
 
                 let (_, accuracy) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
-                    .context(SensorParseSnafu { details: "Reading accuracy not found" })?;
+                    .map_err(e!("Reading accuracy not found"))?;
                 debug!("Sensor {:?} reading accuracy: {:?}", sensor_name, accuracy);
 
                 let units = self.session.read_line()
-                    .context(SensorParseSnafu { details: "Reading units not found" })?;
+                    .map_err(e!("Reading units not found"))?;
                 debug!("Sensor {:?} reading units: {:?}", sensor_name, units);
 
                 self.session.exp_regex(r#"\r?\n\r?\n"#)
-                    .context(SensorParseSnafu { details: "End marker not found" })?;
+                    .map_err(e!("End marker not found"))?;
 
                 results.push(Ok(SensorReading {
                     name: sensor_name.to_string(),
@@ -323,14 +316,12 @@ impl Ipmi {
                     units,
                 }));
             } else {
-                results.push(Err(Error::SensorNotFound {
-                    name: sensor_name.to_string(),
-                }));
+                results.push(Err(Error::SensorNotFound(sensor_name.to_string())));
             }
         }
 
         self.session.wait_for_prompt()
-            .context(PromptNotFoundSnafu)?;
+            .map_err(Error::PromptNotFound)?;
 
         Ok(results)
     }

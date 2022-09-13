@@ -6,7 +6,6 @@ use std::{
 };
 
 use serde::Deserialize;
-use snafu::ResultExt;
 
 use crate::error::*;
 
@@ -99,10 +98,10 @@ pub struct Config {
 
 pub fn load_config(path: &Path) -> Result<Config> {
     let contents = fs::read_to_string(path)
-        .context(IoSnafu { path })?;
+        .map_err(|e| Error::Io { path: path.to_owned(), source: e })?;
 
     let mut config: Config = toml::from_str(&contents)
-        .context(ConfigParseSnafu { path })?;
+        .map_err(|e| Error::ConfigParse { path: path.to_owned(), source: e })?;
 
     // Validate config
 

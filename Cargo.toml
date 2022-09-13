@@ -16,10 +16,10 @@ futures = "0.3.24"
 log = "0.4.17"
 rexpect = "0.4.0"
 serde_json = "1.0.85"
-snafu = "0.7.1"
 # We cannot switch to clap v3 because its MSRV is too high for the distros that
 # we provide binary packages for: https://github.com/clap-rs/clap/issues/3267
 structopt = "0.3.26"
+thiserror = "1.0.34"
 tokio-stream = "0.1.9"
 toml = "0.5.9"
 

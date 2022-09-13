@@ -17,7 +17,6 @@ use std::{
 use env_logger::{self, Env};
 use futures::stream::FuturesUnordered;
 use log::{debug, error, info};
-use snafu::ResultExt;
 use structopt::StructOpt;
 use tokio::{
     task,
@@ -76,14 +75,13 @@ impl IpmiSession {
         S: AsRef<OsStr>,
         R: IntoIterator<Item = u8>,
     {
-        let mut ipmi = Ipmi::with_args(args).context(IpmiSnafu)?;
-        let orig_fan_mode = ipmi.get_fan_mode().context(IpmiSnafu)?;
+        let mut ipmi = Ipmi::with_args(args)?;
+        let orig_fan_mode = ipmi.get_fan_mode()?;
 
         info!("[{}] Original fan mode: {:?}", name.as_ref(), orig_fan_mode);
         info!("[{}] Setting fan mode to: {:?}", name.as_ref(), FanMode::Full);
 
-        ipmi.set_fan_mode(FanMode::Full)
-            .context(IpmiSnafu)?;
+        ipmi.set_fan_mode(FanMode::Full)?;
 
         Ok(Self {
             name: name.as_ref().to_owned(),
@@ -168,7 +166,7 @@ impl MainApp {
                     if c.is_ok() {
                         info!("Interrupted");
                     }
-                    c.context(IoSnafu { path: "(interrupt)" })
+                    c.map_err(|e| Error::Io { path: "(interrupt)".into(), source: e })
                 }
                 // Oh boy, this is an Option<Result<Result<()>, JoinError>>
                 r = loops.next() => {
@@ -180,7 +178,7 @@ impl MainApp {
                             if e.is_cancelled() {
                                 Ok(())
                             } else {
-                                Err(e).context(LoopPanickedSnafu)
+                                Err(e).map_err(Error::LoopPanicked)
                             }
                         },
                         // zone_loop's actual error return value
@@ -282,14 +280,12 @@ impl MainApp {
         let mut ipmi_lock = session.ipmi.lock().unwrap();
 
         for z in &zone_config.ipmi_zones {
-            let dcycle_cur = ipmi_lock.get_duty_cycle(*z)
-                .context(IpmiSnafu)?;
+            let dcycle_cur = ipmi_lock.get_duty_cycle(*z)?;
 
             info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
                   session.name, z, temp, dcycle_cur, dcycle_new);
 
-            ipmi_lock.set_duty_cycle(*z, dcycle_new)
-                .context(IpmiSnafu)?;
+            ipmi_lock.set_duty_cycle(*z, dcycle_new)?;
         }
 
         Ok(())
