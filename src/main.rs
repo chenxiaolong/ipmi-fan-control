@@ -3,32 +3,33 @@ mod error;
 mod source;
 mod ipmi;
 
-use std::{
-    cmp::{self, Reverse},
-    collections::HashMap,
-    ffi::OsStr,
-    io,
-    path::PathBuf,
-    process,
-    sync::{Arc, Mutex},
-    u8,
-};
+use {
+    std::{
+        cmp::{self, Reverse},
+        collections::HashMap,
+        ffi::OsStr,
+        io,
+        path::PathBuf,
+        process,
+        sync::{Arc, Mutex},
+        u8,
+    },
+    env_logger::{self, Env},
+    futures::stream::FuturesUnordered,
+    log::{debug, error, info},
+    retry::retry_with_index,
+    structopt::StructOpt,
+    tokio::{
+        task,
+        time::sleep,
+    },
+    tokio_stream::StreamExt,
 
-use env_logger::{self, Env};
-use futures::stream::FuturesUnordered;
-use log::{debug, error, info};
-use snafu::ResultExt;
-use structopt::StructOpt;
-use tokio::{
-    task,
-    time::sleep,
+    config::{Aggregation, Config, load_config, Step, Zone},
+    error::{Error, Result},
+    ipmi::{FanMode, Ipmi},
+    source::get_source_readings,
 };
-use tokio_stream::StreamExt;
-
-use config::{Aggregation, Config, load_config, Step, Zone};
-use error::*;
-use ipmi::{FanMode, Ipmi};
-use source::get_source_readings;
 
 #[cfg(unix)]
 async fn interrupted() -> io::Result<()> {
@@ -76,14 +77,13 @@ impl IpmiSession {
         S: AsRef<OsStr>,
         R: IntoIterator<Item = u8>,
     {
-        let mut ipmi = Ipmi::with_args(args).context(IpmiSnafu)?;
-        let orig_fan_mode = ipmi.get_fan_mode().context(IpmiSnafu)?;
+        let mut ipmi = Ipmi::with_args(args)?;
+        let orig_fan_mode = ipmi.get_fan_mode()?;
 
         info!("[{}] Original fan mode: {:?}", name.as_ref(), orig_fan_mode);
         info!("[{}] Setting fan mode to: {:?}", name.as_ref(), FanMode::Full);
 
-        ipmi.set_fan_mode(FanMode::Full)
-            .context(IpmiSnafu)?;
+        ipmi.set_fan_mode(FanMode::Full)?;
 
         Ok(Self {
             name: name.as_ref().to_owned(),
@@ -100,16 +100,14 @@ impl Drop for IpmiSession {
 
         for z in &self.restore_zones {
             info!("[{}] Setting zone {} duty cycle to 100%", self.name, z);
-            match ipmi_lock.set_duty_cycle(*z, 100) {
-                Ok(_) => {}
-                Err(e) => error!("[{}] Failed to set duty cycle: {}", self.name, e),
+            if let Err(e) = ipmi_lock.set_duty_cycle(*z, 100) {
+                error!("[{}] Failed to set duty cycle: {}", self.name, e);
             }
         }
 
         info!("[{}] Restoring fan mode to: {:?}", self.name, self.orig_fan_mode);
-        match ipmi_lock.set_fan_mode(self.orig_fan_mode) {
-            Ok(_) => {}
-            Err(e) => error!("[{}] Failed to restore fan mode: {}", self.name, e),
+        if let Err(e) = ipmi_lock.set_fan_mode(self.orig_fan_mode) {
+            error!("[{}] Failed to restore fan mode: {}", self.name, e);
         }
     }
 }
@@ -168,7 +166,7 @@ impl MainApp {
                     if c.is_ok() {
                         info!("Interrupted");
                     }
-                    c.context(IoSnafu { path: "(interrupt)" })
+                    c.map_err(|e| Error::Io { path: "(interrupt)".into(), source: e })
                 }
                 // Oh boy, this is an Option<Result<Result<()>, JoinError>>
                 r = loops.next() => {
@@ -180,7 +178,7 @@ impl MainApp {
                             if e.is_cancelled() {
                                 Ok(())
                             } else {
-                                Err(e).context(LoopPanickedSnafu)
+                                Err(e).map_err(Error::LoopPanicked)
                             }
                         },
                         // zone_loop's actual error return value
@@ -254,8 +252,7 @@ impl MainApp {
             Some(i) => zone_config.steps[i],
             None => {
                 let dcycle = zone_config.steps.last()
-                    .map(|s| s.dcycle)
-                    .unwrap_or(100);
+                    .map_or(100, |s| s.dcycle);
 
                 Step {
                     temp,
@@ -282,14 +279,12 @@ impl MainApp {
         let mut ipmi_lock = session.ipmi.lock().unwrap();
 
         for z in &zone_config.ipmi_zones {
-            let dcycle_cur = ipmi_lock.get_duty_cycle(*z)
-                .context(IpmiSnafu)?;
+            let dcycle_cur = ipmi_lock.get_duty_cycle(*z)?;
 
             info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
                   session.name, z, temp, dcycle_cur, dcycle_new);
 
-            ipmi_lock.set_duty_cycle(*z, dcycle_new)
-                .context(IpmiSnafu)?;
+            ipmi_lock.set_duty_cycle(*z, dcycle_new)?;
         }
 
         Ok(())
@@ -298,7 +293,11 @@ impl MainApp {
     /// Get temperature sensor value in degrees Celsius using the zone's
     /// data aggregation method.
     fn get_temp(ipmi: Arc<Mutex<Ipmi>>, zone_config: &Zone) -> Result<u8> {
-        let mut readings = get_source_readings(ipmi, &zone_config.sources)?
+        let mut readings = retry_with_index(zone_config.retry_iter(), move |i| {
+            debug!("Querying sources for zones {:?} (attempt {}/{})",
+                   zone_config.ipmi_zones, i, zone_config.retries.0 + 1);
+            get_source_readings(ipmi.clone(), &zone_config.sources)
+        })?
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
@@ -317,7 +316,7 @@ impl MainApp {
                 let sum = readings
                     .into_iter()
                     .take(n)
-                    .map(|v| v as u32)
+                    .map(u32::from)
                     .sum::<u32>();
 
                 Ok((sum as f32 / n as f32) as u8)

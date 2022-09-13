@@ -1,17 +1,18 @@
-use std::{
-    collections::HashMap,
-    convert::TryInto,
-    fs,
-    path::Path,
-    process::{Command, Stdio},
-    sync::{Arc, Mutex},
+use {
+    std::{
+        collections::HashMap,
+        convert::TryInto,
+        fs,
+        path::Path,
+        process::{Command, Stdio},
+        sync::{Arc, Mutex},
+    },
+    crate::{
+        config::Source,
+        error::{Error, Result},
+        ipmi::{Ipmi, SensorReading},
+    },
 };
-
-use snafu::ResultExt;
-
-use crate::config::Source;
-use crate::error::*;
-use crate::ipmi::{Ipmi, SensorReading};
 
 /// Get the temperature of a hard drive via smartctl. This function fails only
 /// if smartctl fails to run or if the output can't be parsed as JSON. If the
@@ -26,11 +27,11 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
         .arg(block_dev.as_ref())
         .stdout(Stdio::piped())
         .spawn()
-        .context(IoSnafu { path: "(smartctl)".to_owned() })?;
+        .map_err(|e| Error::Io { path: "(smartctl)".into(), source: e })?;
 
     let result = serde_json::from_reader(proc.stdout.take().unwrap());
     let status = proc.wait()
-        .context(IoSnafu { path: "(smartctl)".to_owned() })?;
+        .map_err(|e| Error::Io { path: "(smartctl)".into(), source: e })?;
 
     match status.code() {
         // smartctl will return status code 2 when a drive is in standby
@@ -39,7 +40,7 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
      }
 
     let root: serde_json::Value = result
-        .context(SmartParseSnafu { block_dev: block_dev.as_ref().to_owned() })?;
+        .map_err(|e| Error::SmartParse { block_dev: block_dev.as_ref().to_owned(), source: e })?;
 
     let temperature = root
         .get("temperature")
@@ -56,13 +57,13 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
 /// the bounds of a `u8`, then `Ok(None)` is returned.
 fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<Option<u8>> {
     let contents = fs::read_to_string(path.as_ref())
-        .context(IoSnafu { path: path.as_ref().to_owned() })?;
+        .map_err(|e| Error::Io { path: path.as_ref().to_owned(), source: e })?;
     let trimmed = contents.trim();
 
     // The file should be in milli-degrees Celsius
     let temperature = trimmed
         .parse::<u32>()
-        .context(SensorValueParseSnafu { value: trimmed.to_owned() })?
+        .map_err(|e| Error::SensorValueParse { value: trimmed.to_owned(), source: e })?
         .checked_div(1000)
         .and_then(|t| t.try_into().ok());
 
@@ -82,11 +83,9 @@ fn parse_ipmi_sources<T: AsRef<str>>(ipmi: Arc<Mutex<Ipmi>>, sensors: &[T])
     }
 
     let mut ipmi_lock = ipmi.lock().unwrap();
-    let ipmi_readings = ipmi_lock.get_sensor_readings(sensors)
-        .context(IpmiSnafu)?
+    let ipmi_readings = ipmi_lock.get_sensor_readings(sensors)?
         .into_iter()
-        .collect::<Result<Vec<SensorReading>, _>>()
-        .context(IpmiSnafu)?;
+        .collect::<Result<Vec<SensorReading>, _>>()?;
 
     let result = ipmi_readings
         .into_iter()
