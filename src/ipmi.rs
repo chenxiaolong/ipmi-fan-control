@@ -103,6 +103,12 @@ pub struct Ipmi {
 }
 
 impl Ipmi {
+    /// Createt an [`Ipmi`] instance with a set of ipmitool arguments. The
+    /// arguments can be used to specify options, like `-I lanplus`, and should
+    /// not contain the executable name (argv[0]) nor any subcommand.
+    ///
+    /// The `ipmitool` executable will be found in the `PATH` environment
+    /// variable.
     pub fn with_args<I, S>(args: I) -> Result<Self>
     where
         I: IntoIterator<Item = S>,
@@ -115,6 +121,9 @@ impl Ipmi {
         Self::with_command(command)
     }
 
+    /// Create an [`Ipmi`] instance from a specific [`Command`]. The command
+    /// should include the arguments necessary to spawn an `ipmitool shell`
+    /// instance.
     fn with_command(command: Command) -> Result<Self> {
         let mut session = PtyReplSession {
             echo_on: false,
@@ -130,19 +139,19 @@ impl Ipmi {
         Ok(Self { session })
     }
 
-    // Quote an array of ipmitool shell arguments to form a valid command
-    // string.
-    //
-    // The shell's command parsing is pretty simple and has the following
-    // properties:
-    // * Each command must fit in a line
-    // * Each line is parsed as a byte string
-    // * Quotes are used to surround individual arguments and cannot be escaped
-    // * An unterminated quote causes an out-of-bounds read
-    // * Empty quoted arguments are ignored
-    // * All whitespace within quotes (as determined by isspace()) become spaces
-    // * The maxinum number of arguments is EXEC_ARG_SIZE (64) and any extra
-    //   arguments are silently ignored
+    /// Quote an array of ipmitool shell arguments to form a valid command
+    /// string.
+    ///
+    /// The shell's command parsing is pretty simple and has the following
+    /// properties:
+    /// * Each command must fit in a line
+    /// * Each line is parsed as a byte string
+    /// * Quotes are used to surround individual arguments and cannot be escaped
+    /// * An unterminated quote causes an out-of-bounds read
+    /// * Empty quoted arguments are ignored
+    /// * All whitespace within quotes (as determined by isspace()) become spaces
+    /// * The maxinum number of arguments is EXEC_ARG_SIZE (64) and any extra
+    ///   arguments are silently ignored
     fn shell_quote<I, S>(args: I) -> Result<String>
     where
         I: IntoIterator<Item = S>,
@@ -192,7 +201,8 @@ impl Ipmi {
         Ok(command)
     }
 
-    /// Execute ipmitool command and return output
+    /// Execute an ipmitool command and return the output. The output includes
+    /// all text up to, but not including the shell prompt.
     fn execute<I, S>(&mut self, args: I) -> Result<String>
     where
         I: IntoIterator<Item = S>,
@@ -207,7 +217,7 @@ impl Ipmi {
             .context(PromptNotFoundSnafu)
     }
 
-    /// Get fan mode
+    /// Get the current fan mode.
     pub fn get_fan_mode(&mut self) -> Result<FanMode> {
         let output = self.execute(&["raw", "0x30", "0x45", "0"])?;
 
@@ -218,14 +228,16 @@ impl Ipmi {
         Ok(FanMode::from(raw_mode))
     }
 
-    /// Set fan mode
+    /// Set the fan mode.
     pub fn set_fan_mode(&mut self, mode: FanMode) -> Result<()> {
         self.execute(&["raw", "0x30", "0x45", "1", &u8::from(mode).to_string()])?;
 
         Ok(())
     }
 
-    /// Get duty cycle
+    /// Get the current duty cycle. The valud should be in the range [0, 100],
+    /// but is not guaranteed as this function returns the raw value supplied by
+    /// the BMC.
     pub fn get_duty_cycle(&mut self, zone: u8) -> Result<u8> {
         let output = self.execute(&["raw", "0x30", "0x70", "0x66", "0", &zone.to_string()])?;
 
@@ -236,14 +248,19 @@ impl Ipmi {
         Ok(dcycle)
     }
 
-    /// Set duty cycle
+    /// Set the duty cycle. The valud should be in the range [0, 100], but this
+    /// is not validated. The raw `dcycle` value will be sent to the BMC as-is.
     pub fn set_duty_cycle(&mut self, zone: u8, dcycle: u8) -> Result<()> {
         self.execute(&["raw", "0x30", "0x70", "0x66", "1", &zone.to_string(), &dcycle.to_string()])?;
 
         Ok(())
     }
 
-    /// Get sensor readings
+    /// Get the readings for the specified sensors. The items in the result are
+    /// in the same order as the input. If a sensor is not found, the result for
+    /// that sensor will be [`Error::SensorNotFound`]. If the ipmitool `sdr get`
+    /// output cannot be parsed (eg. if the sensor reading does not include
+    /// units), then the function will fail hard and return no results.
     pub fn get_sensor_readings<T: AsRef<str>>(&mut self, sensors: &[T])
         -> Result<Vec<Result<SensorReading>>>
     {
