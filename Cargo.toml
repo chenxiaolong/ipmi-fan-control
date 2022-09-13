@@ -12,21 +12,21 @@ edition = "2018"
 
 [dependencies]
 env_logger = "0.9.0"
-futures = "0.3.19"
-log = "0.4.14"
+futures = "0.3.24"
+log = "0.4.17"
 rexpect = "0.4.0"
-serde_json = "1.0.74"
-snafu = "0.7.0"
+serde_json = "1.0.85"
+snafu = "0.7.1"
 # We cannot switch to clap v3 because its MSRV is too high for the distros that
 # we provide binary packages for: https://github.com/clap-rs/clap/issues/3267
-structopt = "0.3.25"
-tokio-stream = "0.1.8"
-toml = "0.5.8"
+structopt = "0.3.26"
+tokio-stream = "0.1.9"
+toml = "0.5.9"
 
 [dependencies.serde]
-version = "1.0.133"
+version = "1.0.144"
 features = ["derive"]
 
 [dependencies.tokio]
-version = "1.15.0"
+version = "1.21.1"
 features = ["full"]
