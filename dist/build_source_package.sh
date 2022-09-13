@@ -139,10 +139,6 @@ build_pkgbuild() {
 # Build deb source package for Debian/Ubuntu
 build_dsc() {
     check_tools dch debuild
-    # These are here to make the build fail faster. Building a source package
-    # requires all build deps to be installed because the process runs
-    # `debian/rules clean`.
-    check_tools cargo dh-exec
 
     # Debian/Ubuntu seem to prefer plusses over dots for git versions
     local deb_full_version=${version}${version_suffix//./+}
@@ -178,7 +174,10 @@ build_dsc() {
         "${dch_extra_args[@]}" \
         "Automatically built from version ${full_version}"
 
-    debuild -S "${debuild_extra_args[@]}"
+    # Skip cleaning because it requires additional dependencies, like dh-exec,
+    # that prevent running this on non-Debian-based distros. We're guaranteed to
+    # have a clean workspace already anyway.
+    debuild -S -nc "${debuild_extra_args[@]}"
 
     popd >/dev/null
 
