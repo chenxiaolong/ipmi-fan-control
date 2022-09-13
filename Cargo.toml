@@ -4,7 +4,7 @@ description = "SuperMicro IPMI fan control daemon"
 repository = "https://github.com/chenxiaolong/ipmi-fan-control"
 readme = "README.md"
 license = "GPL-3.0-or-later"
-version = "0.3.6"
+version = "0.3.7"
 authors = ["Andrew Gunnerson <andrewgunnerson@gmail.com>"]
 edition = "2018"
 
@@ -20,7 +20,7 @@ serde_json = "1.0.85"
 # We cannot switch to clap v3 because its MSRV is too high for the distros that
 # we provide binary packages for: https://github.com/clap-rs/clap/issues/3267
 structopt = "0.3.26"
-thiserror = "1.0.34"
+thiserror = "1.0.35"
 tokio-stream = "0.1.9"
 toml = "0.5.9"
 
