@@ -1,15 +1,15 @@
-use std::{
-    io,
-    num::ParseIntError,
-    path::PathBuf,
-    process::ExitStatus,
-    result,
+use {
+    std::{
+        io,
+        num::ParseIntError,
+        path::PathBuf,
+        process::ExitStatus,
+        result,
+    },
+    thiserror::Error,
+    tokio::task::JoinError,
+    crate::ipmi,
 };
-
-use thiserror::Error;
-use tokio::task::JoinError;
-
-use crate::ipmi;
 
 #[derive(Debug, Error)]
 pub enum Error {

@@ -1,15 +1,18 @@
-use std::{
-    collections::HashMap,
-    convert::TryInto,
-    fs,
-    path::Path,
-    process::{Command, Stdio},
-    sync::{Arc, Mutex},
+use {
+    std::{
+        collections::HashMap,
+        convert::TryInto,
+        fs,
+        path::Path,
+        process::{Command, Stdio},
+        sync::{Arc, Mutex},
+    },
+    crate::{
+        config::Source,
+        error::{Error, Result},
+        ipmi::{Ipmi, SensorReading},
+    },
 };
-
-use crate::config::Source;
-use crate::error::*;
-use crate::ipmi::{Ipmi, SensorReading};
 
 /// Get the temperature of a hard drive via smartctl. This function fails only
 /// if smartctl fails to run or if the output can't be parsed as JSON. If the

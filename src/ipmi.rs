@@ -1,14 +1,15 @@
-use std::{
-    ffi::OsStr,
-    num::ParseIntError,
-    process::Command,
-    result,
-};
-
-use log::debug;
-use rexpect::{
-    errors,
-    session::{PtyReplSession, spawn_command},
+use {
+    std::{
+        ffi::OsStr,
+        num::ParseIntError,
+        process::Command,
+        result,
+    },
+    log::debug,
+    rexpect::{
+        errors,
+        session::{PtyReplSession, spawn_command},
+    },
 };
 
 #[derive(Debug, thiserror::Error)]

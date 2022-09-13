@@ -1,13 +1,13 @@
-use std::{
-    collections::HashMap,
-    fs,
-    path::Path,
-    time::Duration,
+use {
+    std::{
+        collections::HashMap,
+        fs,
+        path::Path,
+        time::Duration,
+    },
+    serde::Deserialize,
+    crate::error::{Error, Result},
 };
-
-use serde::Deserialize;
-
-use crate::error::*;
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct Interval(pub u16);

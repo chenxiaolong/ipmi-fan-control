@@ -3,31 +3,32 @@ mod error;
 mod source;
 mod ipmi;
 
-use std::{
-    cmp::{self, Reverse},
-    collections::HashMap,
-    ffi::OsStr,
-    io,
-    path::PathBuf,
-    process,
-    sync::{Arc, Mutex},
-    u8,
-};
+use {
+    std::{
+        cmp::{self, Reverse},
+        collections::HashMap,
+        ffi::OsStr,
+        io,
+        path::PathBuf,
+        process,
+        sync::{Arc, Mutex},
+        u8,
+    },
+    env_logger::{self, Env},
+    futures::stream::FuturesUnordered,
+    log::{debug, error, info},
+    structopt::StructOpt,
+    tokio::{
+        task,
+        time::sleep,
+    },
+    tokio_stream::StreamExt,
 
-use env_logger::{self, Env};
-use futures::stream::FuturesUnordered;
-use log::{debug, error, info};
-use structopt::StructOpt;
-use tokio::{
-    task,
-    time::sleep,
+    config::{Aggregation, Config, load_config, Step, Zone},
+    error::{Error, Result},
+    ipmi::{FanMode, Ipmi},
+    source::get_source_readings,
 };
-use tokio_stream::StreamExt;
-
-use config::{Aggregation, Config, load_config, Step, Zone};
-use error::*;
-use ipmi::{FanMode, Ipmi};
-use source::get_source_readings;
 
 #[cfg(unix)]
 async fn interrupted() -> io::Result<()> {
