@@ -304,11 +304,15 @@ impl Ipmi {
                     .context(SensorParseSnafu { details: "Reading line not found" })?;
                 let (_, value) = self.session.exp_regex(r#"[\d\.]+"#)
                     .context(SensorParseSnafu { details: "Reading value not found" })?;
+                debug!("Sensor {:?} reading value: {:?}", sensor_name, value);
 
-                self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
+                let (_, accuracy) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
                     .context(SensorParseSnafu { details: "Reading accuracy not found" })?;
+                debug!("Sensor {:?} reading accuracy: {:?}", sensor_name, accuracy);
+
                 let units = self.session.read_line()
                     .context(SensorParseSnafu { details: "Reading units not found" })?;
+                debug!("Sensor {:?} reading units: {:?}", sensor_name, units);
 
                 self.session.exp_regex(r#"\r?\n\r?\n"#)
                     .context(SensorParseSnafu { details: "End marker not found" })?;
