@@ -14,13 +14,26 @@ use snafu::{ResultExt, Snafu};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Failed to parse line '{}': {}", line, source))]
+    #[snafu(display("Failed to parse line {:?}: {}", line, source))]
     OutputParse {
         line: String,
         source: Box<dyn error::Error + 'static + Send + Sync>,
     },
-    #[snafu(display("Failed to interact with ipmitool: {}", source))]
-    Interaction {
+    #[snafu(display("Failed to parse sensor output: {}: {}", details, source))]
+    SensorParse {
+        details: String,
+        source: errors::Error,
+    },
+    #[snafu(display("Failed to spawn ipmitool: {}", source))]
+    Spawn {
+        source: errors::Error,
+    },
+    #[snafu(display("Failed to send ipmitool command: {}", source))]
+    SendCommand {
+        source: errors::Error,
+    },
+    #[snafu(display("ipmitool shell prompt not found: {}", source))]
+    PromptNotFound {
         source: errors::Error,
     },
     #[snafu(display("Invalid argument: '{}'", arg))]
@@ -102,12 +115,12 @@ impl Ipmi {
             echo_on: false,
             prompt: "ipmitool> ".to_string(),
             pty_session: spawn_command(command, Some(2000))
-                .context(InteractionSnafu)?,
+                .context(SpawnSnafu)?,
             quit_command: Some("exit".to_string()),
         };
 
         session.wait_for_prompt()
-            .context(InteractionSnafu)?;
+            .context(PromptNotFoundSnafu)?;
 
         Ok(Self { session })
     }
@@ -117,9 +130,9 @@ impl Ipmi {
         debug!("Running IPMI command: '{}'", command);
 
         self.session.send_line(command)
-            .context(InteractionSnafu)?;
+            .context(SendCommandSnafu)?;
         self.session.wait_for_prompt()
-            .context(InteractionSnafu)
+            .context(PromptNotFoundSnafu)
     }
 
     /// Get fan mode
@@ -180,10 +193,10 @@ impl Ipmi {
             command.push('\'');
         }
 
-        debug!("Running IPMI command: '{}'", command);
+        debug!("Running IPMI command: {}", command);
 
         self.session.send_line(&command)
-            .context(InteractionSnafu)?;
+            .context(SendCommandSnafu)?;
 
         let mut results = vec![];
 
@@ -191,14 +204,14 @@ impl Ipmi {
             let sensor = sensor.as_ref();
 
             let r = self.session.exp_regex(r#"(^|\n)(Sensor ID\s+:\s+|Unable to find sensor id ')"#)
-                .context(InteractionSnafu)?;
+                .context(SensorParseSnafu { details: "ID line not found" })?;
 
             let found = !r.1.trim_start().starts_with("Unable");
             let sensor_name = if found {
                 self.session.exp_string(" (")
             } else {
                 self.session.exp_char('\'')
-            }.context(InteractionSnafu)?;
+            }.context(SensorParseSnafu { details: "Name not found" })?;
 
             if sensor_name != *sensor {
                 return Err(Error::DesyncedOutput {
@@ -209,17 +222,17 @@ impl Ipmi {
 
             if found {
                 self.session.exp_regex(r#"\n\s+Sensor Reading\s+:\s+"#)
-                    .context(InteractionSnafu)?;
+                    .context(SensorParseSnafu { details: "Reading line not found" })?;
                 let (_, value) = self.session.exp_regex(r#"[\d\.]+"#)
-                    .context(InteractionSnafu)?;
+                    .context(SensorParseSnafu { details: "Reading value not found" })?;
 
                 self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
-                    .context(InteractionSnafu)?;
+                    .context(SensorParseSnafu { details: "Reading accuracy not found" })?;
                 let units = self.session.read_line()
-                    .context(InteractionSnafu)?;
+                    .context(SensorParseSnafu { details: "Reading units not found" })?;
 
                 self.session.exp_regex(r#"\r?\n\r?\n"#)
-                    .context(InteractionSnafu)?;
+                    .context(SensorParseSnafu { details: "End marker not found" })?;
 
                 results.push(Ok(SensorReading {
                     name: sensor_name.to_string(),
@@ -234,7 +247,7 @@ impl Ipmi {
         }
 
         self.session.wait_for_prompt()
-            .context(InteractionSnafu)?;
+            .context(PromptNotFoundSnafu)?;
 
         Ok(results)
     }
