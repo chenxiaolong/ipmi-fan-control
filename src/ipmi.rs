@@ -36,16 +36,21 @@ pub enum Error {
     PromptNotFound {
         source: errors::Error,
     },
-    #[snafu(display("Invalid argument: '{}'", arg))]
+    #[snafu(display("Command exceeds maximum size of {}: {:?}", size, command))]
+    CommandTooLong {
+        size: usize,
+        command: String,
+    },
+    #[snafu(display("Invalid argument: {:?}", arg))]
     InvalidArgument {
         arg: String,
     },
-    #[snafu(display("Output is desynced: expected '{}', but got '{}'", expected, got))]
+    #[snafu(display("Output is desynced: expected {:?}, but got {:?}", expected, got))]
     DesyncedOutput {
         expected: String,
         got: String,
     },
-    #[snafu(display("Sensor not found: '{}'", name))]
+    #[snafu(display("Sensor not found: {:?}", name))]
     SensorNotFound {
         name: String,
     },
@@ -125,11 +130,78 @@ impl Ipmi {
         Ok(Self { session })
     }
 
-    /// Execute ipmitool command and return output
-    fn execute(&mut self, command: &str) -> Result<String> {
-        debug!("Running IPMI command: '{}'", command);
+    // Quote an array of ipmitool shell arguments to form a valid command
+    // string.
+    //
+    // The shell's command parsing is pretty simple and has the following
+    // properties:
+    // * Each command must fit in a line
+    // * Each line is parsed as a byte string
+    // * Quotes are used to surround individual arguments and cannot be escaped
+    // * An unterminated quote causes an out-of-bounds read
+    // * Empty quoted arguments are ignored
+    // * All whitespace within quotes (as determined by isspace()) become spaces
+    // * The maxinum number of arguments is EXEC_ARG_SIZE (64) and any extra
+    //   arguments are silently ignored
+    fn shell_quote<I, S>(args: I) -> Result<String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        // This includes the null terminator
+        const EXEC_ARG_SIZE: usize = 64;
 
-        self.session.send_line(command)
+        let mut command = String::new();
+        let mut num_args = 0;
+
+        for arg in args {
+            let arg = arg.as_ref();
+
+            if arg.is_empty() {
+                continue;
+            }
+
+            if arg.find(|c: char| c == '\'' || c == '"' || c == '\n').is_some() {
+                return Err(Error::InvalidArgument { arg: arg.to_string() });
+            }
+
+            if num_args > 0 {
+                command.push(' ');
+            }
+
+            // Avoid quoting if possible to reduce chance of exceeding the
+            // shell's buffer size
+            if arg.find(|c: char| c.is_whitespace()).is_some() {
+                command.push('\'');
+                command.push_str(arg);
+                command.push('\'');
+            } else {
+                command.push_str(arg);
+            }
+
+            num_args += 1;
+        }
+
+        if command.len() >= EXEC_ARG_SIZE {
+            return Err(Error::CommandTooLong {
+                size: EXEC_ARG_SIZE,
+                command,
+            });
+        }
+
+        Ok(command)
+    }
+
+    /// Execute ipmitool command and return output
+    fn execute<I, S>(&mut self, args: I) -> Result<String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let command = Self::shell_quote(args)?;
+        debug!("Running IPMI command: {:?}", command);
+
+        self.session.send_line(&command)
             .context(SendCommandSnafu)?;
         self.session.wait_for_prompt()
             .context(PromptNotFoundSnafu)
@@ -137,7 +209,7 @@ impl Ipmi {
 
     /// Get fan mode
     pub fn get_fan_mode(&mut self) -> Result<FanMode> {
-        let output = self.execute("raw 0x30 0x45 0")?;
+        let output = self.execute(&["raw", "0x30", "0x45", "0"])?;
 
         let raw_mode = u8::from_str_radix(output.trim(), 16)
             .map_err(|x| x.into())
@@ -148,14 +220,14 @@ impl Ipmi {
 
     /// Set fan mode
     pub fn set_fan_mode(&mut self, mode: FanMode) -> Result<()> {
-        self.execute(&format!("raw 0x30 0x45 1 {}", u8::from(mode)))?;
+        self.execute(&["raw", "0x30", "0x45", "1", &u8::from(mode).to_string()])?;
 
         Ok(())
     }
 
     /// Get duty cycle
     pub fn get_duty_cycle(&mut self, zone: u8) -> Result<u8> {
-        let output = self.execute(&format!("raw 0x30 0x70 0x66 0 {}", zone))?;
+        let output = self.execute(&["raw", "0x30", "0x70", "0x66", "0", &zone.to_string()])?;
 
         let dcycle = u8::from_str_radix(output.trim(), 16)
             .map_err(|x| x.into())
@@ -166,7 +238,7 @@ impl Ipmi {
 
     /// Set duty cycle
     pub fn set_duty_cycle(&mut self, zone: u8, dcycle: u8) -> Result<()> {
-        self.execute(&format!("raw 0x30 0x70 0x66 1 {} {}", zone, dcycle))?;
+        self.execute(&["raw", "0x30", "0x70", "0x66", "1", &zone.to_string(), &dcycle.to_string()])?;
 
         Ok(())
     }
@@ -179,21 +251,11 @@ impl Ipmi {
             return Ok(vec![]);
         }
 
-        let mut command = "sdr get".to_string();
+        let mut args = vec!["sdr", "get"];
+        args.extend(sensors.iter().map(|s| s.as_ref()));
 
-        for sensor in sensors {
-            let sensor = sensor.as_ref();
-
-            if sensor.find('\'').is_some() {
-                return Err(Error::InvalidArgument { arg: sensor.to_string() });
-            }
-
-            command.push_str(" '");
-            command.push_str(sensor);
-            command.push('\'');
-        }
-
-        debug!("Running IPMI command: {}", command);
+        let command = Self::shell_quote(args)?;
+        debug!("Running IPMI command: {:?}", command);
 
         self.session.send_line(&command)
             .context(SendCommandSnafu)?;
