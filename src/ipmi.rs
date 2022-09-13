@@ -98,7 +98,8 @@ impl Ipmi {
     /// not contain the executable name (argv[0]) nor any subcommand.
     ///
     /// The `ipmitool` executable will be found in the `PATH` environment
-    /// variable.
+    /// variable. `TERM=` will be set in the child process to prevent readline
+    /// from outputting bracketed paste mode control sequences.
     pub fn with_args<I, S>(args: I) -> Result<Self>
     where
         I: IntoIterator<Item = S>,
@@ -107,6 +108,7 @@ impl Ipmi {
         let mut command = Command::new("ipmitool");
         command.args(args);
         command.arg("shell");
+        command.env("TERM", "");
 
         Self::with_command(command)
     }
