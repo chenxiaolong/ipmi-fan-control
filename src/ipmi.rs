@@ -140,7 +140,7 @@ impl Ipmi {
     /// * An unterminated quote causes an out-of-bounds read
     /// * Empty quoted arguments are ignored
     /// * All whitespace within quotes (as determined by isspace()) become spaces
-    /// * The maxinum number of arguments is EXEC_ARG_SIZE (64) and any extra
+    /// * The maxinum number of arguments is `EXEC_ARG_SIZE` (64) and any extra
     ///   arguments are silently ignored
     fn shell_quote<I, S>(args: I) -> Result<String>
     where

@@ -99,16 +99,14 @@ impl Drop for IpmiSession {
 
         for z in &self.restore_zones {
             info!("[{}] Setting zone {} duty cycle to 100%", self.name, z);
-            match ipmi_lock.set_duty_cycle(*z, 100) {
-                Ok(_) => {}
-                Err(e) => error!("[{}] Failed to set duty cycle: {}", self.name, e),
+            if let Err(e) = ipmi_lock.set_duty_cycle(*z, 100) {
+                error!("[{}] Failed to set duty cycle: {}", self.name, e);
             }
         }
 
         info!("[{}] Restoring fan mode to: {:?}", self.name, self.orig_fan_mode);
-        match ipmi_lock.set_fan_mode(self.orig_fan_mode) {
-            Ok(_) => {}
-            Err(e) => error!("[{}] Failed to restore fan mode: {}", self.name, e),
+        if let Err(e) = ipmi_lock.set_fan_mode(self.orig_fan_mode) {
+            error!("[{}] Failed to restore fan mode: {}", self.name, e);
         }
     }
 }
@@ -253,8 +251,7 @@ impl MainApp {
             Some(i) => zone_config.steps[i],
             None => {
                 let dcycle = zone_config.steps.last()
-                    .map(|s| s.dcycle)
-                    .unwrap_or(100);
+                    .map_or(100, |s| s.dcycle);
 
                 Step {
                     temp,
@@ -314,7 +311,7 @@ impl MainApp {
                 let sum = readings
                     .into_iter()
                     .take(n)
-                    .map(|v| v as u32)
+                    .map(u32::from)
                     .sum::<u32>();
 
                 Ok((sum as f32 / n as f32) as u8)
