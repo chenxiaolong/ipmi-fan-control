@@ -17,6 +17,7 @@ use {
     env_logger::{self, Env},
     futures::stream::FuturesUnordered,
     log::{debug, error, info},
+    retry::retry_with_index,
     structopt::StructOpt,
     tokio::{
         task,
@@ -292,7 +293,11 @@ impl MainApp {
     /// Get temperature sensor value in degrees Celsius using the zone's
     /// data aggregation method.
     fn get_temp(ipmi: Arc<Mutex<Ipmi>>, zone_config: &Zone) -> Result<u8> {
-        let mut readings = get_source_readings(ipmi, &zone_config.sources)?
+        let mut readings = retry_with_index(zone_config.retry_iter(), move |i| {
+            debug!("Querying sources for zones {:?} (attempt {}/{})",
+                   zone_config.ipmi_zones, i, zone_config.retries.0 + 1);
+            get_source_readings(ipmi.clone(), &zone_config.sources)
+        })?
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();

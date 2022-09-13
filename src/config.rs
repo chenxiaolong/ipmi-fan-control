@@ -5,6 +5,7 @@ use {
         path::Path,
         time::Duration,
     },
+    retry::delay::Fixed,
     serde::Deserialize,
     crate::error::{Error, Result},
 };
@@ -21,6 +22,30 @@ impl Interval {
 impl Default for Interval {
     fn default() -> Self {
         Self(1)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct Retries(pub usize);
+
+impl Default for Retries {
+    fn default() -> Self {
+        Self(2)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct RetryDelayMs(pub u64);
+
+impl RetryDelayMs {
+    pub fn to_fixed(self) -> Fixed {
+        Fixed::from_millis(self.0)
+    }
+}
+
+impl Default for RetryDelayMs {
+    fn default() -> Self {
+        Self(500)
     }
 }
 
@@ -78,11 +103,21 @@ pub struct Zone {
     pub session: SessionName,
     #[serde(default)]
     pub interval: Interval,
+    #[serde(default)]
+    pub retries: Retries,
+    #[serde(default)]
+    pub retry_delay_ms: RetryDelayMs,
     pub ipmi_zones: Vec<u8>,
     pub sources: Vec<Source>,
     #[serde(default)]
     pub aggregation: Aggregation,
     pub steps: Vec<Step>,
+}
+
+impl Zone {
+    pub fn retry_iter(&self) -> impl Iterator<Item = Duration> {
+        self.retry_delay_ms.to_fixed().take(self.retries.0)
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -12,6 +12,15 @@ ipmi_zones = [0]
 # default interval is 1 second.
 interval = 5
 
+# Number of retries to query temperature source. If temperature readings are
+# still not successfully queried after all attempts, then the program will fail
+# and exit. The default is 2 retries (3 attempts in total).
+#retries = 2
+
+# Number of milliseconds to wait before retrying when querying a temperature
+# source fails. This field has no effect if `retries` is set to 0.
+#retry_delay_ms = 500
+
 # Temperature sources to use for measurement. Sensors that report invalid
 # temperatures are currently ignored.
 sources = [

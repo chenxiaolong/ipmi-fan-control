@@ -40,6 +40,15 @@ pub enum Error {
         command: PathBuf,
         status: ExitStatus,
     },
+    #[error("Failed all {attempts} attempt(s); last attempt error: {source}")]
+    RetriesFailed {
+        attempts: u64,
+        source: Box<Self>,
+    },
+    #[error("Internal retry error: {message}")]
+    RetriesInternal {
+        message: String,
+    },
     #[error("IPMI error: {0}")]
     Ipmi(#[from] ipmi::Error),
     #[error("{path:?}: {source}")]
@@ -49,6 +58,19 @@ pub enum Error {
     },
     #[error("Zone monitor loop panicked: {0}")]
     LoopPanicked(#[source] JoinError),
+}
+
+impl From<retry::Error<Self>> for Error {
+    fn from(value: retry::Error<Self>) -> Self {
+        use retry::Error::{Internal, Operation};
+
+        match value {
+            Operation { error, total_delay: _, tries } => {
+                Self::RetriesFailed { attempts: tries, source: Box::new(error) }
+            }
+            Internal(message) => Self::RetriesInternal { message }
+        }
+    }
 }
 
 pub type Result<T, E = Error> = result::Result<T, E>;
