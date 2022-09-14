@@ -331,9 +331,9 @@ impl Ipmi {
                     return Err(Error::ReadingNotAvailable);
                 }
 
-                let (_, accuracy) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
-                    .map_err(e!("Reading accuracy not found"))?;
-                debug!("Sensor {:?} reading accuracy: {:?}", sensor_name, accuracy);
+                let (_, tolerance) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
+                    .map_err(e!("Reading tolerance not found"))?;
+                debug!("Sensor {:?} reading tolerance: {:?}", sensor_name, tolerance);
 
                 let units = self.session.read_line()
                     .map_err(e!("Reading units not found"))?;
