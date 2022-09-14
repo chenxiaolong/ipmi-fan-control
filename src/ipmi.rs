@@ -203,10 +203,17 @@ impl Ipmi {
         let command = Self::shell_quote(args)?;
         debug!("Running IPMI command: {:?}", command);
 
-        self.session.send_line(&command)
-            .map_err(Error::SendCommand)?;
-        self.session.wait_for_prompt()
-            .map_err(Error::PromptNotFound)
+        // Ensure we always wait for the prompt so that a failure does not
+        // result in an output desync
+        let send_ret = self.session.send_line(&command)
+            .map_err(Error::SendCommand);
+        let prompt_ret = self.session.wait_for_prompt()
+            .map_err(Error::PromptNotFound);
+
+        // Prefer the send error if that failed
+        send_ret?;
+
+        prompt_ret
     }
 
     /// Get the current fan mode.
@@ -252,6 +259,22 @@ impl Ipmi {
     /// output cannot be parsed (eg. if the sensor reading does not include
     /// units), then the function will fail hard and return no results.
     pub fn get_sensor_readings<T: AsRef<str>>(&mut self, sensors: &[T])
+        -> Result<Vec<Result<SensorReading>>>
+    {
+        // Ensure we always wait for the prompt so that a failure does not
+        // result in an output desync
+        let sensor_ret = self.get_sensor_readings_internal(sensors);
+        let prompt_ret = self.session.wait_for_prompt()
+            .map_err(Error::PromptNotFound);
+
+        // Prefer reporting the sensor error
+        let sensor_ret = sensor_ret?;
+        prompt_ret?;
+
+        Ok(sensor_ret)
+    }
+
+    fn get_sensor_readings_internal<T: AsRef<str>>(&mut self, sensors: &[T])
         -> Result<Vec<Result<SensorReading>>>
     {
         if sensors.is_empty() {
@@ -322,9 +345,6 @@ impl Ipmi {
                 results.push(Err(Error::SensorNotFound(sensor_name.to_string())));
             }
         }
-
-        self.session.wait_for_prompt()
-            .map_err(Error::PromptNotFound)?;
 
         Ok(results)
     }
