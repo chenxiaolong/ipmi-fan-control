@@ -42,6 +42,8 @@ pub enum Error {
         expected: String,
         got: String,
     },
+    #[error("Sensor reading not available")]
+    ReadingNotAvailable,
     #[error("Sensor not found: {0:?}")]
     SensorNotFound(String),
 }
@@ -203,10 +205,17 @@ impl Ipmi {
         let command = Self::shell_quote(args)?;
         debug!("Running IPMI command: {:?}", command);
 
-        self.session.send_line(&command)
-            .map_err(Error::SendCommand)?;
-        self.session.wait_for_prompt()
-            .map_err(Error::PromptNotFound)
+        // Ensure we always wait for the prompt so that a failure does not
+        // result in an output desync
+        let send_ret = self.session.send_line(&command)
+            .map_err(Error::SendCommand);
+        let prompt_ret = self.session.wait_for_prompt()
+            .map_err(Error::PromptNotFound);
+
+        // Prefer the send error if that failed
+        send_ret?;
+
+        prompt_ret
     }
 
     /// Get the current fan mode.
@@ -254,6 +263,22 @@ impl Ipmi {
     pub fn get_sensor_readings<T: AsRef<str>>(&mut self, sensors: &[T])
         -> Result<Vec<Result<SensorReading>>>
     {
+        // Ensure we always wait for the prompt so that a failure does not
+        // result in an output desync
+        let sensor_ret = self.get_sensor_readings_internal(sensors);
+        let prompt_ret = self.session.wait_for_prompt()
+            .map_err(Error::PromptNotFound);
+
+        // Prefer reporting the sensor error
+        let sensor_ret = sensor_ret?;
+        prompt_ret?;
+
+        Ok(sensor_ret)
+    }
+
+    fn get_sensor_readings_internal<T: AsRef<str>>(&mut self, sensors: &[T])
+        -> Result<Vec<Result<SensorReading>>>
+    {
         if sensors.is_empty() {
             return Ok(vec![]);
         }
@@ -298,13 +323,17 @@ impl Ipmi {
             if found {
                 self.session.exp_regex(r#"\n\s+Sensor Reading\s+:\s+"#)
                     .map_err(e!("Reading line not found"))?;
-                let (_, value) = self.session.exp_regex(r#"[\d\.]+"#)
+                let (_, value) = self.session.exp_regex(r#"([\d\.]+|Not Available)"#)
                     .map_err(e!("Reading value not found"))?;
                 debug!("Sensor {:?} reading value: {:?}", sensor_name, value);
 
-                let (_, accuracy) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
-                    .map_err(e!("Reading accuracy not found"))?;
-                debug!("Sensor {:?} reading accuracy: {:?}", sensor_name, accuracy);
+                if value == "Not Available" {
+                    return Err(Error::ReadingNotAvailable);
+                }
+
+                let (_, tolerance) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
+                    .map_err(e!("Reading tolerance not found"))?;
+                debug!("Sensor {:?} reading tolerance: {:?}", sensor_name, tolerance);
 
                 let units = self.session.read_line()
                     .map_err(e!("Reading units not found"))?;
@@ -322,9 +351,6 @@ impl Ipmi {
                 results.push(Err(Error::SensorNotFound(sensor_name.to_string())));
             }
         }
-
-        self.session.wait_for_prompt()
-            .map_err(Error::PromptNotFound)?;
 
         Ok(results)
     }
