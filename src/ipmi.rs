@@ -50,7 +50,7 @@ pub enum Error {
 
 type Result<T, E = Error> = result::Result<T, E>;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FanMode {
     Standard,       // 0
     Full,           // 1

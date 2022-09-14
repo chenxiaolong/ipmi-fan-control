@@ -81,9 +81,11 @@ impl IpmiSession {
         let orig_fan_mode = ipmi.get_fan_mode()?;
 
         info!("[{}] Original fan mode: {:?}", name.as_ref(), orig_fan_mode);
-        info!("[{}] Setting fan mode to: {:?}", name.as_ref(), FanMode::Full);
 
-        ipmi.set_fan_mode(FanMode::Full)?;
+        if orig_fan_mode != FanMode::Full {
+            info!("[{}] Setting fan mode to: {:?}", name.as_ref(), FanMode::Full);
+            ipmi.set_fan_mode(FanMode::Full)?;
+        }
 
         Ok(Self {
             name: name.as_ref().to_owned(),
@@ -105,9 +107,11 @@ impl Drop for IpmiSession {
             }
         }
 
-        info!("[{}] Restoring fan mode to: {:?}", self.name, self.orig_fan_mode);
-        if let Err(e) = ipmi_lock.set_fan_mode(self.orig_fan_mode) {
-            error!("[{}] Failed to restore fan mode: {}", self.name, e);
+        if self.orig_fan_mode != FanMode::Full {
+            info!("[{}] Restoring fan mode to: {:?}", self.name, self.orig_fan_mode);
+            if let Err(e) = ipmi_lock.set_fan_mode(self.orig_fan_mode) {
+                error!("[{}] Failed to restore fan mode: {}", self.name, e);
+            }
         }
     }
 }
@@ -284,7 +288,9 @@ impl MainApp {
             info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
                   session.name, z, temp, dcycle_cur, dcycle_new);
 
-            ipmi_lock.set_duty_cycle(*z, dcycle_new)?;
+            if dcycle_new != dcycle_cur {
+                ipmi_lock.set_duty_cycle(*z, dcycle_new)?;
+            }
         }
 
         Ok(())
