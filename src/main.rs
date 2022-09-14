@@ -16,7 +16,7 @@ use {
     },
     env_logger::{self, Env},
     futures::stream::FuturesUnordered,
-    log::{debug, error, info},
+    log::{debug, error, info, trace},
     retry::retry_with_index,
     structopt::StructOpt,
     tokio::{
@@ -168,7 +168,7 @@ impl MainApp {
                 // Explicitly interrupted by ^C or signal handler
                 c = interrupted() => {
                     if c.is_ok() {
-                        info!("Interrupted");
+                        debug!("Interrupted");
                     }
                     c.map_err(|e| Error::Io { path: "(interrupt)".into(), source: e })
                 }
@@ -219,8 +219,8 @@ impl MainApp {
         session: Arc<IpmiSession>,
         zone_config: Arc<Zone>,
     ) -> Result<()> {
-        info!("[{}] Starting loop for IPMI zones {:?}",
-              session.name, zone_config.ipmi_zones);
+        debug!("[{}] Starting loop for IPMI zones {:?}",
+               session.name, zone_config.ipmi_zones);
 
         loop {
             let s = session.clone();
@@ -285,8 +285,8 @@ impl MainApp {
         for z in &zone_config.ipmi_zones {
             let dcycle_cur = ipmi_lock.get_duty_cycle(*z)?;
 
-            info!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
-                  session.name, z, temp, dcycle_cur, dcycle_new);
+            debug!("[{}] Zone {}: zone_temp={}C, dcycle_cur={}%, dcycle_new={}%",
+                   session.name, z, temp, dcycle_cur, dcycle_new);
 
             if dcycle_new != dcycle_cur {
                 ipmi_lock.set_duty_cycle(*z, dcycle_new)?;
@@ -300,7 +300,7 @@ impl MainApp {
     /// data aggregation method.
     fn get_temp(ipmi: Arc<Mutex<Ipmi>>, zone_config: &Zone) -> Result<u8> {
         let mut readings = retry_with_index(zone_config.retry_iter(), move |i| {
-            debug!("Querying sources for zones {:?} (attempt {}/{})",
+            trace!("Querying sources for zones {:?} (attempt {}/{})",
                    zone_config.ipmi_zones, i, zone_config.retries.0 + 1);
             get_source_readings(ipmi.clone(), &zone_config.sources)
         })?
@@ -344,7 +344,7 @@ async fn main_wrapper() -> Result<()> {
     let opt = Opt::from_args();
 
     let config = load_config(&opt.config)?;
-    debug!("Loaded config: {:#?}", config);
+    trace!("Loaded config: {:#?}", config);
 
     let mut app = MainApp::new(config)?;
     app.run().await

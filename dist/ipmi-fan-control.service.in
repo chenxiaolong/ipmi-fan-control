@@ -6,5 +6,9 @@ ExecStart=@BINDIR@/ipmi-fan-control -c @SYSCONFDIR@/ipmi-fan-control.toml
 Restart=on-failure
 KillMode=process
 
+# The default logging level is info, but can be changed for more verbose status
+# messages or for troubleshooting.
+#Environment=RUST_LOG=info
+
 [Install]
 WantedBy=multi-user.target

@@ -5,7 +5,7 @@ use {
         process::Command,
         result,
     },
-    log::debug,
+    log::trace,
     rexpect::{
         errors,
         session::{PtyReplSession, spawn_command},
@@ -203,7 +203,7 @@ impl Ipmi {
         S: AsRef<str>,
     {
         let command = Self::shell_quote(args)?;
-        debug!("Running IPMI command: {:?}", command);
+        trace!("Running IPMI command: {:?}", command);
 
         // Ensure we always wait for the prompt so that a failure does not
         // result in an output desync
@@ -287,7 +287,7 @@ impl Ipmi {
         args.extend(sensors.iter().map(|s| s.as_ref()));
 
         let command = Self::shell_quote(args)?;
-        debug!("Running IPMI command: {:?}", command);
+        trace!("Running IPMI command: {:?}", command);
 
         self.session.send_line(&command)
             .map_err(Error::SendCommand)?;
@@ -325,7 +325,7 @@ impl Ipmi {
                     .map_err(e!("Reading line not found"))?;
                 let (_, value) = self.session.exp_regex(r#"([\d\.]+|Not Available)"#)
                     .map_err(e!("Reading value not found"))?;
-                debug!("Sensor {:?} reading value: {:?}", sensor_name, value);
+                trace!("Sensor {:?} reading value: {:?}", sensor_name, value);
 
                 if value == "Not Available" {
                     return Err(Error::ReadingNotAvailable);
@@ -333,11 +333,11 @@ impl Ipmi {
 
                 let (_, tolerance) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
                     .map_err(e!("Reading tolerance not found"))?;
-                debug!("Sensor {:?} reading tolerance: {:?}", sensor_name, tolerance);
+                trace!("Sensor {:?} reading tolerance: {:?}", sensor_name, tolerance);
 
                 let units = self.session.read_line()
                     .map_err(e!("Reading units not found"))?;
-                debug!("Sensor {:?} reading units: {:?}", sensor_name, units);
+                trace!("Sensor {:?} reading units: {:?}", sensor_name, units);
 
                 self.session.exp_regex(r#"\r?\n\r?\n"#)
                     .map_err(e!("End marker not found"))?;
