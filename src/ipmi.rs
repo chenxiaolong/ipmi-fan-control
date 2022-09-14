@@ -42,6 +42,8 @@ pub enum Error {
         expected: String,
         got: String,
     },
+    #[error("Sensor reading not available")]
+    ReadingNotAvailable,
     #[error("Sensor not found: {0:?}")]
     SensorNotFound(String),
 }
@@ -321,9 +323,13 @@ impl Ipmi {
             if found {
                 self.session.exp_regex(r#"\n\s+Sensor Reading\s+:\s+"#)
                     .map_err(e!("Reading line not found"))?;
-                let (_, value) = self.session.exp_regex(r#"[\d\.]+"#)
+                let (_, value) = self.session.exp_regex(r#"([\d\.]+|Not Available)"#)
                     .map_err(e!("Reading value not found"))?;
                 debug!("Sensor {:?} reading value: {:?}", sensor_name, value);
+
+                if value == "Not Available" {
+                    return Err(Error::ReadingNotAvailable);
+                }
 
                 let (_, accuracy) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
                     .map_err(e!("Reading accuracy not found"))?;
