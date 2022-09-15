@@ -5,6 +5,8 @@ Description=SuperMicro IPMI fan control daemon
 ExecStart=@BINDIR@/ipmi-fan-control -c @SYSCONFDIR@/ipmi-fan-control.toml
 Restart=on-failure
 KillMode=process
+# Prevent logging timestamps since journald already has timestamps
+Environment=IPMI_FAN_CONTROL_LOG_TIMESTAMPS=false
 
 [Install]
 WantedBy=multi-user.target
