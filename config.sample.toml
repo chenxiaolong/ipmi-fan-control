@@ -1,3 +1,16 @@
+# Verbosity of the logging output. The valid log levels, from least verbose to
+# most verbose, are:
+#
+# * error: Fatal errors only
+# * warn:  Includes ^^ + recoverable errors
+# * info:  Includes ^^ + fan mode change messages on startup/shutdown
+# * debug: Includes ^^ + a status message with the temperature and duty cycle
+#          during each fan update interval (useful for tuning the fan curve)
+# * trace: Includes ^^ + details about parsed values and the raw IPMI commands
+#
+# (Note: This option is ignored if the RUST_LOG environment variable is set)
+#log_level = "info"
+
 # Definition of a logical fan zone.
 [[zones]]
 # IPMI session. If unspecified, the `default` session is used, which runs

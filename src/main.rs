@@ -7,14 +7,18 @@ use {
     std::{
         cmp::{self, Reverse},
         collections::HashMap,
+        env,
         ffi::OsStr,
         io,
         path::PathBuf,
         process,
-        sync::{Arc, Mutex},
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+            Mutex,
+        },
         u8,
     },
-    env_logger::{self, Env},
     futures::stream::FuturesUnordered,
     log::{debug, error, info, trace},
     retry::retry_with_index,
@@ -30,6 +34,8 @@ use {
     ipmi::{FanMode, Ipmi},
     source::get_source_readings,
 };
+
+static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(unix)]
 async fn interrupted() -> io::Result<()> {
@@ -168,7 +174,7 @@ impl MainApp {
                 // Explicitly interrupted by ^C or signal handler
                 c = interrupted() => {
                     if c.is_ok() {
-                        debug!("Interrupted");
+                        info!("Interrupted");
                     }
                     c.map_err(|e| Error::Io { path: "(interrupt)".into(), source: e })
                 }
@@ -219,8 +225,8 @@ impl MainApp {
         session: Arc<IpmiSession>,
         zone_config: Arc<Zone>,
     ) -> Result<()> {
-        debug!("[{}] Starting loop for IPMI zones {:?}",
-               session.name, zone_config.ipmi_zones);
+        info!("[{}] Starting loop for IPMI zones {:?}",
+              session.name, zone_config.ipmi_zones);
 
         loop {
             let s = session.clone();
@@ -331,6 +337,16 @@ impl MainApp {
     }
 }
 
+fn bool_env(name: &str, default: bool) -> bool {
+    let value = env::var(name);
+
+    match value {
+        Ok(v) if v == "true" || v == "t" || v == "yes" || v == "y" || v == "1" => true,
+        Ok(v) if v == "false" || v == "f" || v == "no" || v == "n" || v == "0" => false,
+        _ => default,
+    }
+}
+
 #[derive(StructOpt, Debug)]
 struct Opt {
     /// Path to config file
@@ -339,11 +355,26 @@ struct Opt {
 }
 
 async fn main_wrapper() -> Result<()> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-
     let opt = Opt::from_args();
-
     let config = load_config(&opt.config)?;
+
+    let pkg_name = env!("CARGO_PKG_NAME").replace('-', "_");
+
+    // RUST_LOG has higher precedence than the config file option because it has
+    // more flexibility (eg. turning on logs for dependencies)
+    let mut builder = env_logger::Builder::from_env(
+        env_logger::Env::default()
+            .default_filter_or(format!("{}={}", pkg_name, config.log_level)));
+
+    // Don't include timestamps in the log if requested (eg. if logs are going
+    // to something like journald that already has timestamps)
+    if !bool_env(&format!("{}_LOG_TIMESTAMPS", pkg_name.to_uppercase()), true) {
+        builder.format_timestamp(None);
+    }
+
+    builder.init();
+    LOGGING_INITIALIZED.store(true, Ordering::SeqCst);
+
     trace!("Loaded config: {:#?}", config);
 
     let mut app = MainApp::new(config)?;
@@ -355,7 +386,11 @@ async fn main() {
     match main_wrapper().await {
         Ok(_) => {}
         Err(e) => {
-            error!("{}", e);
+            if LOGGING_INITIALIZED.load(Ordering::SeqCst) {
+                error!("{}", e);
+            } else {
+                eprintln!("{}", e);
+            }
             process::exit(1);
         }
     }

@@ -54,35 +54,6 @@ sudo ./target/debug/ipmi-fan-control --config config.toml
 sudo ./target/release/ipmi-fan-control --config config.toml
 ```
 
-Logging
--------
-
-For tweaking the fan curve or troubleshooting issues, it may be helpful to increase the log level. To do so, set the `RUST_LOG` environment variable to one of the following values (from least verbose to most verbose):
-
-* `error`: Show fatal errors only
-* `warn`: Includes `error` and also shows recoverable errors
-* `info` (default): Includes `warn` and also shows fan mode changes on startup/shutdown
-* `debug`: Includes `info` and also shows status message with the temperature and duty cycle during each interval (useful for tuning the fan curve)
-* `trace`: Includes `debug` and also shows parsed values and the raw IPMI commands
-
-If ipmi-fan-control is being run directly, `RUST_LOG` can simply be set on the commmand line:
-
-```sh
-sudo RUST_LOG=<level> ipmi-fan-control <...>
-```
-
-Otherwise, if it's run via the systemd service, run:
-
-```sh
-sudo systemctl edit ipmi-fan-control
-```
-
-and add:
-
-```sh
-Enviroment=RUST_LOG=<level>
-```
-
 TODO
 ----
 

@@ -1,6 +1,7 @@
 use {
     std::{
         collections::HashMap,
+        fmt,
         fs,
         path::Path,
         time::Duration,
@@ -9,6 +10,34 @@ use {
     serde::Deserialize,
     crate::error::{Error, Result},
 };
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl Default for LogLevel {
+    fn default() -> Self {
+        Self::Info
+    }
+}
+
+impl fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Error => f.write_str("error"),
+            Self::Warn => f.write_str("warn"),
+            Self::Info => f.write_str("info"),
+            Self::Debug => f.write_str("debug"),
+            Self::Trace => f.write_str("trace"),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct Interval(pub u16);
@@ -126,6 +155,8 @@ pub struct Sessions(pub HashMap<String, Vec<String>>);
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub log_level: LogLevel,
     #[serde(default)]
     pub sessions: Sessions,
     pub zones: Vec<Zone>,
