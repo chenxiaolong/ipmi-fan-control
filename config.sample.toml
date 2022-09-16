@@ -101,16 +101,19 @@ steps = [
 #    { temp = 70, dcycle = 70 },
 #]
 
-# Optional section for defining other ipmitool sessions. This is not needed when
+# Optional section for defining other IPMI sessions. This is not needed when
 # connecting to the local machine.
 #
 # The key is the name of the session, which can be any arbitrary non-empty
-# string, and the value is the array of arguments to pass to ipmitool.
+# string, and the value is either a local or remote session configuration.
 [sessions]
-# Implicit default session for connecting to local IPMI. This runs ipmitool with
-# no arguments. If this is changed, it will take effect in any zone that doesn't
-# explicitly specify another session.
-#"default" = []
+# Implicit default session for connecting to local IPMI. If this is changed, it
+# will take effect in any zone that doesn't explicitly specify another session.
+#"default" = { type = "local" }
 
 # Example of a remote session.
-#"remote" = ["-I", "lanplus", "-H", "<host>", "-U", "<username>", "-P", "<password>"]
+#"remote" = { type = "remote", hostname = "<host>", username = "<username>", password = "<password>" }
+
+# Example of a remote session using ipmitool arguments. This configuration
+# format is deprecated and only exists for backwards compatibility.
+#"remote_compat" = ["-I", "lanplus", "-H", "<host>", "-U", "<username>", "-P", "<password>"]

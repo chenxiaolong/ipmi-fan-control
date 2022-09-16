@@ -1,6 +1,5 @@
 use {
     std::{
-        ffi::OsStr,
         num::ParseIntError,
         process::Command,
         result,
@@ -10,6 +9,7 @@ use {
         errors,
         session::{PtyReplSession, spawn_command},
     },
+    crate::config::SessionType,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -95,20 +95,28 @@ pub struct Ipmi {
 }
 
 impl Ipmi {
-    /// Createt an [`Ipmi`] instance with a set of ipmitool arguments. The
-    /// arguments can be used to specify options, like `-I lanplus`, and should
-    /// not contain the executable name (argv[0]) nor any subcommand.
+    /// Createt an [`Ipmi`] instance for the given session type.
     ///
     /// The `ipmitool` executable will be found in the `PATH` environment
     /// variable. `TERM=` will be set in the child process to prevent readline
     /// from outputting bracketed paste mode control sequences.
-    pub fn with_args<I, S>(args: I) -> Result<Self>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
-    {
+    pub fn new(st: &SessionType) -> Result<Self> {
         let mut command = Command::new("ipmitool");
-        command.args(args);
+
+        match st {
+            SessionType::Local => {}
+            SessionType::Remote { hostname, username, password } => {
+                command.arg("-I");
+                command.arg("lanplus");
+                command.arg("-H");
+                command.arg(hostname);
+                command.arg("-U");
+                command.arg(username);
+                command.arg("-P");
+                command.arg(password);
+            }
+        }
+
         command.arg("shell");
         command.env("TERM", "");
 

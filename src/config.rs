@@ -6,8 +6,19 @@ use {
         path::Path,
         time::Duration,
     },
+    clap::{Parser, ValueEnum},
     retry::delay::Fixed,
-    serde::Deserialize,
+    serde::{
+        de::{
+            self,
+            value::{MapAccessDeserializer, SeqAccessDeserializer},
+            MapAccess,
+            SeqAccess,
+            Visitor,
+        },
+        Deserialize,
+        Deserializer,
+    },
     crate::error::{Error, Result},
 };
 
@@ -149,8 +160,101 @@ impl Zone {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
+pub enum SessionType {
+    Local,
+    Remote {
+        hostname: String,
+        username: String,
+        password: String,
+    },
+}
+
+impl Default for SessionType {
+    fn default() -> Self {
+        Self::Local
+    }
+}
+
+#[derive(Clone, Copy, Debug, Parser, ValueEnum)]
+#[clap(rename_all = "lower")]
+pub enum IpmitoolInterfaceOpt {
+    LanPlus,
+}
+
+/// Basic compatibility layer for ipmitool's command line arguments
+#[derive(Debug, Parser)]
+pub struct IpmitoolOpt {
+    #[clap(short = 'I', value_enum)]
+    pub interface: IpmitoolInterfaceOpt,
+    #[clap(short = 'H')]
+    pub hostname: String,
+    #[clap(short = 'U')]
+    pub username: String,
+    #[clap(short = 'P')]
+    pub password: String,
+}
+
+#[derive(Debug, Default)]
+pub struct SessionTypeCompat(pub SessionType);
+
+/// Deserialize either a map as a native SessionType instance or an array of
+/// strings as ipmitool arguments.
+impl<'de> Deserialize<'de> for SessionTypeCompat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct SessionTypeVisitor;
+
+        impl<'de> Visitor<'de> for SessionTypeVisitor {
+            type Value = SessionType;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("native session configuration or ipmitool compatibility layer arguments")
+            }
+
+            // Deserialize an array and parse it as ipmitool arguments
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let args = Vec::<String>::deserialize(SeqAccessDeserializer::new(seq))?;
+
+                // ipmitool defaults to a local connection with run without arguments
+                if args.is_empty() {
+                    return Ok(SessionType::Local);
+                }
+
+                let argv0 = ["ipmitool_compat".to_owned()];
+                let argv = argv0.iter().chain(args.iter());
+
+                let opt = IpmitoolOpt::try_parse_from(argv)
+                    .map_err(|e| de::Error::custom(format!("ipmitool compatibility layer: {}", e)))?;
+
+                Ok(SessionType::Remote {
+                    hostname: opt.hostname,
+                    username: opt.username,
+                    password: opt.password,
+                })
+            }
+
+            // Deserialize a map into SessionType directly
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                Deserialize::deserialize(MapAccessDeserializer::new(map))
+            }
+        }
+
+        deserializer.deserialize_any(SessionTypeVisitor).map(Self)
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
-pub struct Sessions(pub HashMap<String, Vec<String>>);
+pub struct Sessions(pub HashMap<String, SessionTypeCompat>);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -173,7 +277,7 @@ pub fn load_config(path: &Path) -> Result<Config> {
 
     // Create default session
     config.sessions.0.entry(SessionName::default().0)
-        .or_insert_with(Vec::new);
+        .or_insert_with(SessionTypeCompat::default);
 
     if config.zones.is_empty() {
         return Err(Error::ConfigValidation {

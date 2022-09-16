@@ -8,7 +8,6 @@ use {
         cmp::{self, Reverse},
         collections::HashMap,
         env,
-        ffi::OsStr,
         io,
         path::PathBuf,
         process,
@@ -29,7 +28,7 @@ use {
     },
     tokio_stream::StreamExt,
 
-    config::{Aggregation, Config, load_config, Step, Zone},
+    config::{Aggregation, Config, load_config, SessionType, Step, Zone},
     error::{Error, Result},
     ipmi::{FanMode, Ipmi},
     source::get_source_readings,
@@ -76,14 +75,12 @@ struct IpmiSession {
 }
 
 impl IpmiSession {
-    pub fn new<N, I, S, R>(name: N, args: I, restore_zones: R) -> Result<Self>
+    pub fn new<N, R>(name: N, st: &SessionType, restore_zones: R) -> Result<Self>
     where
         N: AsRef<str>,
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
         R: IntoIterator<Item = u8>,
     {
-        let mut ipmi = Ipmi::with_args(args)?;
+        let mut ipmi = Ipmi::new(st)?;
         let orig_fan_mode = ipmi.get_fan_mode()?;
 
         info!("[{}] Original fan mode: {:?}", name.as_ref(), orig_fan_mode);
@@ -131,7 +128,7 @@ impl MainApp {
     fn new(config: Config) -> Result<Self> {
         let mut sessions = HashMap::new();
 
-        for (name, args) in &config.sessions.0 {
+        for (name, st) in &config.sessions.0 {
             let restore_zones: Vec<_> = config.zones
                 .iter()
                 .filter(|z| &z.session.0 == name)
@@ -145,7 +142,7 @@ impl MainApp {
             }
 
             sessions.insert(name.clone(), Arc::new(
-                IpmiSession::new(name, args, restore_zones)?));
+                IpmiSession::new(name, &st.0, restore_zones)?));
         }
 
         Ok(Self {
