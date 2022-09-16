@@ -19,10 +19,10 @@ use {
         },
         u8,
     },
+    clap::Parser,
     futures::stream::FuturesUnordered,
     log::{debug, error, info, trace},
     retry::retry_with_index,
-    structopt::StructOpt,
     tokio::{
         task,
         time::sleep,
@@ -347,15 +347,15 @@ fn bool_env(name: &str, default: bool) -> bool {
     }
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Debug, Parser)]
 struct Opt {
     /// Path to config file
-    #[structopt(short, long)]
+    #[clap(short, long)]
     config: PathBuf,
 }
 
 async fn main_wrapper() -> Result<()> {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     let config = load_config(&opt.config)?;
 
     let pkg_name = env!("CARGO_PKG_NAME").replace('-', "_");
