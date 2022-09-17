@@ -11,7 +11,6 @@ Summary:        SuperMicro IPMI fan control daemon
 License:        GPLv3+
 URL:            https://github.com/chenxiaolong/%{name}
 Source:         %{_tarball_name}
-Source1:        ipmi-fan-control.service.in
 
 %if 0%{?fedora}
 # OBS fails to evaluate this to determine if the package should even be built
@@ -61,7 +60,7 @@ install -d -m 0755 %{buildroot}%{_unitdir}
 sed \
     -e 's|@BINDIR@|%{_bindir}|g' \
     -e 's|@SYSCONFDIR@|%{_sysconfdir}|g' \
-    < %{SOURCE1} \
+    < dist/ipmi-fan-control.service.in \
     > %{buildroot}%{_unitdir}/%{name}.service
 
 install -D -m 0644 config.sample.toml \
