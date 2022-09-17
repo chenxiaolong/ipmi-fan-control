@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         # Once Windows support is complete, windows-latest can be added
-        os: [ubuntu-20.04]
+        os: [ubuntu-22.04]
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
@@ -43,7 +43,7 @@ jobs:
 
   build_source_packages:
     name: Build source packages
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -56,7 +56,4 @@ jobs:
         run: |
           sudo apt-get -y update
           sudo apt-get -y install cargo debhelper devscripts dh-exec
-          ./dist/build_source_package.sh -t tarball
-          ./dist/build_source_package.sh -t srpm
-          ./dist/build_source_package.sh -t pkgbuild
-          ./dist/build_source_package.sh -t dsc
+          ./dist/build_source_package.py -a

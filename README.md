@@ -31,11 +31,11 @@ To build Linux distro-specific packages, first build the corresponding source pa
 
 ```sh
 # SRPM for RPM-based distros
-./dist/build_source_package.sh -t srpm
+./dist/build_source_package.py -t srpm
 # PKGBUILD for Arch Linux
-./dist/build_source_package.sh -t pkgbuild
+./dist/build_source_package.py -t pkgbuild
 # dsc for Debian-based distros
-./dist/build_source_package.sh -t dsc
+./dist/build_source_package.py -t debian
 ```
 
 and then use the distro's standard utilities for building the binary packages. The source packages will be placed in `dist/output/`.

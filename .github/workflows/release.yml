@@ -9,7 +9,7 @@ on:
 jobs:
   create_release:
     name: Create GitHub release
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       version: ${{ steps.get_version.outputs.version }}
@@ -45,7 +45,7 @@ jobs:
       fail-fast: false
       matrix:
         # Once Windows support is complete, windows-latest can be added
-        os: [ubuntu-20.04]
+        os: [ubuntu-22.04]
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
@@ -102,7 +102,7 @@ jobs:
       # Intentionally make this sequential, so we don't publish a release to OBS
       # that doesn't build
       - build
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -117,10 +117,7 @@ jobs:
         run: |
           sudo apt-get -y update
           sudo apt-get -y install cargo debhelper devscripts dh-exec
-          ./dist/build_source_package.sh -t tarball
-          ./dist/build_source_package.sh -t srpm
-          ./dist/build_source_package.sh -t pkgbuild
-          ./dist/build_source_package.sh -t dsc
+          ./dist/build_source_package.py -a
 
       - name: Find vendored tarball
         run: |
