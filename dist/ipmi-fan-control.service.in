@@ -8,5 +8,30 @@ KillMode=process
 # Prevent logging timestamps since journald already has timestamps
 Environment=IPMI_FAN_CONTROL_LOG_TIMESTAMPS=false
 
+# Hardening
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+PrivateIPC=yes
+PrivateTmp=yes
+ProcSubset=pid
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProtectSystem=strict
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+
+# Cannot be set because it prevents smartctl from gathering data
+#ProtectClock=yes
+
+# Network access is only needed for connecting to out-of-band IPMI devices.
+RestrictAddressFamilies=AF_INET AF_INET6
+
 [Install]
 WantedBy=multi-user.target
