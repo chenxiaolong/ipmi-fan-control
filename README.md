@@ -15,7 +15,27 @@ For other Unix-like systems, follow the instructions in the next section to buil
 Building
 --------
 
-The project can be built with the normal cargo tool. To make a debug build, run:
+This project depends on:
+
+* the freeipmi suite of libraries (specifically, libfreeipmi and libipmimonitoring)
+* `pkg-config`
+* the Clang compiler (for generating Rust FFI bindings to the freeipmi libraries)
+* the Rust compiler
+
+These packages can be installed from the system package manager:
+
+```sh
+# Fedora
+sudo dnf install freeipmi-devel pkgconf-pkg-config clang-devel cargo
+# OpenSUSE
+sudo zypper in freeipmi-devel pkgconf-pkg-config clang-devel cargo
+# Arch Linux
+sudo pacman -S freeipmi pkgconf clang cargo
+# Debian-based distros
+sudo apt install libfreeipmi-dev libipmimonitoring-dev pkg-config libclang-dev cargo
+```
+
+Then, to make a debug build, run:
 
 ```sh
 cargo build
