@@ -1,6 +1,6 @@
 use {
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         convert::TryInto,
         fs,
         path::Path,
@@ -10,7 +10,8 @@ use {
     crate::{
         config::Source,
         error::{Error, Result},
-        ipmi::{Ipmi, SensorReading},
+        freeipmi::{SensorUnits, SensorValue},
+        ipmi::Ipmi,
     },
 };
 
@@ -70,35 +71,51 @@ fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<Option<u8>> {
     Ok(temperature)
 }
 
-/// Get the temperatures for the given list of sensors from IPMI. This performs
-/// one ipmitool query to reduce the IPMI round trips, which may be slow. This
-/// function only fails if the IPMI sensor query fails. If a sensor's unit is
-/// not degrees Celsius or if the value exceeds the bounds of a `u8`, then the
-/// reported value of that sensor will be `None`.
-fn parse_ipmi_sources<T: AsRef<str>>(ipmi: Arc<Mutex<Ipmi>>, sensors: &[T])
-    -> Result<HashMap<&str, Option<u8>>>
+/// Get the temperatures for the given list of sensors from IPMI. This queries
+/// all temperature sensors and then filters the results. This function only
+/// fails if the IPMI sensor query fails. If a sensor's unit is not degrees
+/// Celsius or if the value exceeds the bounds of a `u8`, then the reported
+/// value of that sensor will be `None`.
+fn parse_ipmi_sources(ipmi: Arc<Mutex<Ipmi>>, sensors: &HashSet<String>)
+    -> Result<HashMap<String, Option<u8>>>
 {
     if sensors.is_empty() {
         return Ok(HashMap::default());
     }
 
     let mut ipmi_lock = ipmi.lock().unwrap();
-    let ipmi_readings = ipmi_lock.get_sensor_readings(sensors)?
-        .into_iter()
-        .collect::<Result<Vec<SensorReading>, _>>()?;
+    let ipmi_readings = ipmi_lock.get_temperature_readings()?;
+    let mut result = HashMap::new();
 
-    let result = ipmi_readings
-        .into_iter()
-        .map(|r| {
-            if r.units == "degrees C" {
-                r.value.parse::<u8>().ok()
-            } else {
-                None
-            }
-        })
-        .zip(sensors.iter())
-        .map(|(temp, name)| (name.as_ref(), temp))
-        .collect();
+    for sensor in sensors {
+        let reading = match ipmi_readings.get(sensor) {
+            Some(r) => r,
+            None => return Err(Error::SensorNotFound(sensor.into())),
+        };
+
+        let reading = match reading {
+            Some(r) => r,
+            None => return Err(Error::SensorNoReading(sensor.into())),
+        };
+
+        if reading.units != SensorUnits::Celsius {
+            return Err(Error::SensorBadUnits {
+                sensor: sensor.into(),
+                units: reading.units,
+            });
+        }
+
+        let temperature = match reading.value {
+            SensorValue::Uint32(t) => t.try_into().ok(),
+            SensorValue::Double(t) => (t as u32).try_into().ok(),
+            v => return Err(Error::SensorBadValue {
+                sensor: sensor.into(),
+                value: v,
+            }),
+        };
+
+        result.insert(sensor.into(), temperature);
+    }
 
     Ok(result)
 }
@@ -112,11 +129,11 @@ pub fn get_source_readings(ipmi: Arc<Mutex<Ipmi>>, sources: &[Source])
     let ipmi_sensors = sources.iter()
         .filter_map(|s| {
             match s {
-                Source::Ipmi { sensor } => Some(sensor),
+                Source::Ipmi { sensor } => Some(sensor.clone()),
                 _ => None,
             }
         })
-        .collect::<Vec<_>>();
+        .collect::<HashSet<_>>();
 
     let ipmi_results = parse_ipmi_sources(ipmi, &ipmi_sensors)?;
 

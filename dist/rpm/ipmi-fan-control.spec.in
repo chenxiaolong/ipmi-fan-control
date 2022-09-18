@@ -24,6 +24,9 @@ BuildRequires:  rust-packaging
 BuildRequires:  cargo
 %endif
 
+BuildRequires:  clang-devel
+BuildRequires:  freeipmi-devel
+
 %if 0%{?rhel} < 8
 BuildRequires:  systemd
 %else
@@ -31,7 +34,6 @@ BuildRequires:  systemd-rpm-macros
 %{systemd_requires}
 %endif
 
-Requires:       ipmitool
 %if 0%{?rhel} < 8
 Requires:       smartmontools >= 7.0
 %else

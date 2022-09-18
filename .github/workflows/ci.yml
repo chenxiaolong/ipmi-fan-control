@@ -32,6 +32,11 @@ jobs:
       - name: Install clippy
         run: rustup component add clippy
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install clang libfreeipmi-dev libipmimonitoring-dev pkg-config
+
       - name: Run clippy checks in debug mode
         env:
           RUST_BACKTRACE: 1

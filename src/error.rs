@@ -8,7 +8,10 @@ use {
     },
     thiserror::Error,
     tokio::task::JoinError,
-    crate::ipmi,
+    crate::{
+        freeipmi::{SensorUnits, SensorValue},
+        ipmi,
+    },
 };
 
 #[derive(Debug, Error)]
@@ -28,6 +31,20 @@ pub enum Error {
         value: String,
         source: ParseIntError,
     },
+    #[error("Sensor not found: {0}")]
+    SensorNotFound(String),
+    #[error("Unsupported sensor units: {sensor}: {units:?}")]
+    SensorBadUnits {
+        sensor: String,
+        units: SensorUnits,
+    },
+    #[error("Unsupported sensor value: {sensor}: {value:?}")]
+    SensorBadValue {
+        sensor: String,
+        value: SensorValue,
+    },
+    #[error("Sensor reading not available: {0}")]
+    SensorNoReading(String),
     #[error("Failed to parse SMART output for block device {block_dev:?}: {source}")]
     SmartParse {
         block_dev: PathBuf,

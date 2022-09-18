@@ -1,51 +1,26 @@
 use {
     std::{
-        num::ParseIntError,
-        process::Command,
+        collections::HashMap,
+        env,
         result,
     },
     log::trace,
-    rexpect::{
-        errors,
-        session::{PtyReplSession, spawn_command},
+    crate::{
+        bindings,
+        config::SessionType,
+        freeipmi::{self, LfiSession, LimSession, SensorReading},
     },
-    crate::config::SessionType,
 };
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Failed to parse line {line:?}: {source}")]
-    OutputParse {
-        line: String,
-        source: ParseIntError,
-    },
-    #[error("Failed to parse sensor output: {details}: {source}")]
-    SensorParse {
-        details: String,
-        source: errors::Error,
-    },
-    #[error("Failed to spawn ipmitool: {0}")]
-    Spawn(#[source] errors::Error),
-    #[error("Failed to send ipmitool command: {0}")]
-    SendCommand(#[source] errors::Error),
-    #[error("ipmitool shell prompt not found: {0}")]
-    PromptNotFound(#[source] errors::Error),
-    #[error("Command exceeds maximum size of {size}: {command:?}")]
-    CommandTooLong {
-        size: usize,
-        command: String,
-    },
-    #[error("Invalid argument: {0:?}")]
-    InvalidArgument(String),
-    #[error("Output is desynced: expected {expected:?}, but got {got:?}")]
-    DesyncedOutput {
-        expected: String,
-        got: String,
-    },
-    #[error("Sensor reading not available")]
-    ReadingNotAvailable,
-    #[error("Sensor not found: {0:?}")]
-    SensorNotFound(String),
+    #[error("{0}")]
+    FreeIpmi(#[from] freeipmi::Error),
+    #[error("Expected response to be {expected} bytes, but have {actual} bytes")]
+    BadResponseSize {
+        expected: usize,
+        actual: usize,
+    }
 }
 
 type Result<T, E = Error> = result::Result<T, E>;
@@ -83,162 +58,85 @@ impl From<FanMode> for u8 {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct SensorReading {
-    pub name: String,
-    pub value: String,
-    pub units: String,
-}
+const NET_FN_GENERIC: u8 = bindings::IPMI_NET_FN_OEM_SUPERMICRO_GENERIC_RQ as u8;
+const CMD_FAN_MODE: u8 = 0x45;
+const CMD_GENERIC_EXT: u8 = bindings::IPMI_CMD_OEM_SUPERMICRO_GENERIC_EXTENSION as u8;
+const DATA_DUTY_CYCLE: u8 = 0x66;
+const DATA_ACTION_READ: u8 = 0x0;
+const DATA_ACTION_WRITE: u8 = 0x1;
 
+// libipmimonitoring doesn't expose its underlying session and there's no way to
+// give it an existing session, so we're stuck creating two connections.
 pub struct Ipmi {
-    session: PtyReplSession,
+    lfi: LfiSession,
+    lim: LimSession,
 }
 
 impl Ipmi {
     /// Createt an [`Ipmi`] instance for the given session type.
-    ///
-    /// The `ipmitool` executable will be found in the `PATH` environment
-    /// variable. `TERM=` will be set in the child process to prevent readline
-    /// from outputting bracketed paste mode control sequences.
     pub fn new(st: &SessionType) -> Result<Self> {
-        let mut command = Command::new("ipmitool");
+        let lfi = LfiSession::new(st)?;
+        let mut lim = LimSession::new(st)?;
 
-        match st {
-            SessionType::Local => {}
-            SessionType::Remote { hostname, username, password } => {
-                command.arg("-I");
-                command.arg("lanplus");
-                command.arg("-H");
-                command.arg(hostname);
-                command.arg("-U");
-                command.arg(username);
-                command.arg("-P");
-                command.arg(password);
-            }
-        }
+        let temp_dir = env::temp_dir();
+        trace!("SDR cache directory: {:?}", temp_dir);
 
-        command.arg("shell");
-        command.env("TERM", "");
+        lim.set_sdr_cache_directory(&temp_dir)?;
+        // This call is required, even if we're not loading a file
+        lim.set_sensor_config_file(None)?;
 
-        Self::with_command(command)
+        Ok(Self { lfi, lim })
     }
 
-    /// Create an [`Ipmi`] instance from a specific [`Command`]. The command
-    /// should include the arguments necessary to spawn an `ipmitool shell`
-    /// instance.
-    fn with_command(command: Command) -> Result<Self> {
-        let mut session = PtyReplSession {
-            echo_on: false,
-            prompt: "ipmitool> ".to_string(),
-            pty_session: spawn_command(command, Some(2000))
-                .map_err(Error::Spawn)?,
-            quit_command: Some("exit".to_string()),
-        };
+    /// Execute raw IPMI command and return the output. The output does not
+    /// include the command number nor the status. If the command does not
+    /// return a successful response or if the size of the response does not
+    /// match the specified value, an error is returned.
+    fn execute(
+        &mut self,
+        net_fn: u8,
+        command: u8,
+        data: &[u8],
+        expected_size: usize,
+    ) -> Result<Vec<u8>> {
+        trace!("Running IPMI command: net_fn={:02x}, command={:02x}, data={:02x?}",
+               net_fn, command, data);
 
-        session.wait_for_prompt()
-            .map_err(Error::PromptNotFound)?;
+        let response = self.lfi.raw_command(net_fn, command, data)?;
 
-        Ok(Self { session })
-    }
-
-    /// Quote an array of ipmitool shell arguments to form a valid command
-    /// string.
-    ///
-    /// The shell's command parsing is pretty simple and has the following
-    /// properties:
-    /// * Each command must fit in a line
-    /// * Each line is parsed as a byte string
-    /// * Quotes are used to surround individual arguments and cannot be escaped
-    /// * An unterminated quote causes an out-of-bounds read
-    /// * Empty quoted arguments are ignored
-    /// * All whitespace within quotes (as determined by isspace()) become spaces
-    /// * The maxinum number of arguments is `EXEC_ARG_SIZE` (64) and any extra
-    ///   arguments are silently ignored
-    fn shell_quote<I, S>(args: I) -> Result<String>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        // This includes the null terminator
-        const EXEC_ARG_SIZE: usize = 64;
-
-        let mut command = String::new();
-        let mut num_args = 0;
-
-        for arg in args {
-            let arg = arg.as_ref();
-
-            if arg.is_empty() {
-                continue;
-            }
-
-            if arg.find(|c: char| c == '\'' || c == '"' || c == '\n').is_some() {
-                return Err(Error::InvalidArgument(arg.to_string()));
-            }
-
-            if num_args > 0 {
-                command.push(' ');
-            }
-
-            // Avoid quoting if possible to reduce chance of exceeding the
-            // shell's buffer size
-            if arg.find(|c: char| c.is_whitespace()).is_some() {
-                command.push('\'');
-                command.push_str(arg);
-                command.push('\'');
-            } else {
-                command.push_str(arg);
-            }
-
-            num_args += 1;
-        }
-
-        if command.len() >= EXEC_ARG_SIZE {
-            return Err(Error::CommandTooLong {
-                size: EXEC_ARG_SIZE,
-                command,
+        if response.len() != expected_size {
+            return Err(Error::BadResponseSize {
+                expected: expected_size,
+                actual: response.len(),
             });
         }
 
-        Ok(command)
-    }
-
-    /// Execute an ipmitool command and return the output. The output includes
-    /// all text up to, but not including the shell prompt.
-    fn execute<I, S>(&mut self, args: I) -> Result<String>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        let command = Self::shell_quote(args)?;
-        trace!("Running IPMI command: {:?}", command);
-
-        // Ensure we always wait for the prompt so that a failure does not
-        // result in an output desync
-        let send_ret = self.session.send_line(&command)
-            .map_err(Error::SendCommand);
-        let prompt_ret = self.session.wait_for_prompt()
-            .map_err(Error::PromptNotFound);
-
-        // Prefer the send error if that failed
-        send_ret?;
-
-        prompt_ret
+        Ok(response)
     }
 
     /// Get the current fan mode.
     pub fn get_fan_mode(&mut self) -> Result<FanMode> {
-        let output = self.execute(&["raw", "0x30", "0x45", "0"])?;
+        let response = self.execute(
+            NET_FN_GENERIC,
+            CMD_FAN_MODE,
+            &[DATA_ACTION_READ],
+            1,
+        )?;
 
-        let raw_mode = u8::from_str_radix(output.trim(), 16)
-            .map_err(|e| Error::OutputParse { line: output, source: e })?;
-
-        Ok(FanMode::from(raw_mode))
+        Ok(FanMode::from(response[0]))
     }
 
     /// Set the fan mode.
     pub fn set_fan_mode(&mut self, mode: FanMode) -> Result<()> {
-        self.execute(&["raw", "0x30", "0x45", "1", &u8::from(mode).to_string()])?;
+        self.execute(
+            NET_FN_GENERIC,
+            CMD_FAN_MODE,
+            &[
+                DATA_ACTION_WRITE,
+                mode.into(),
+            ],
+            0,
+        )?;
 
         Ok(())
     }
@@ -247,119 +145,57 @@ impl Ipmi {
     /// but is not guaranteed as this function returns the raw value supplied by
     /// the BMC.
     pub fn get_duty_cycle(&mut self, zone: u8) -> Result<u8> {
-        let output = self.execute(&["raw", "0x30", "0x70", "0x66", "0", &zone.to_string()])?;
+        let response = self.execute(
+            NET_FN_GENERIC,
+            CMD_GENERIC_EXT,
+            &[
+                DATA_DUTY_CYCLE,
+                DATA_ACTION_READ,
+                zone,
+            ],
+            1,
+        )?;
 
-        let dcycle = u8::from_str_radix(output.trim(), 16)
-            .map_err(|e| Error::OutputParse { line: output, source: e })?;
-
-        Ok(dcycle)
+        Ok(response[0])
     }
 
     /// Set the duty cycle. The valud should be in the range [0, 100], but this
     /// is not validated. The raw `dcycle` value will be sent to the BMC as-is.
     pub fn set_duty_cycle(&mut self, zone: u8, dcycle: u8) -> Result<()> {
-        self.execute(&["raw", "0x30", "0x70", "0x66", "1", &zone.to_string(), &dcycle.to_string()])?;
+        self.execute(
+            NET_FN_GENERIC,
+            CMD_GENERIC_EXT,
+            &[
+                DATA_DUTY_CYCLE,
+                DATA_ACTION_WRITE,
+                zone,
+                dcycle,
+            ],
+            0,
+        )?;
 
         Ok(())
     }
 
-    /// Get the readings for the specified sensors. The items in the result are
-    /// in the same order as the input. If a sensor is not found, the result for
-    /// that sensor will be [`Error::SensorNotFound`]. If the ipmitool `sdr get`
-    /// output cannot be parsed (eg. if the sensor reading does not include
-    /// units), then the function will fail hard and return no results.
-    pub fn get_sensor_readings<T: AsRef<str>>(&mut self, sensors: &[T])
-        -> Result<Vec<Result<SensorReading>>>
-    {
-        // Ensure we always wait for the prompt so that a failure does not
-        // result in an output desync
-        let sensor_ret = self.get_sensor_readings_internal(sensors);
-        let prompt_ret = self.session.wait_for_prompt()
-            .map_err(Error::PromptNotFound);
+    /// Get readings for all temperature sensors. If an error occurs, no partial
+    /// results will be returned. If a temperature sensor has no reading, then
+    /// the value in the result will be [`None`].
+    pub fn get_temperature_readings(&mut self)
+        -> Result<HashMap<String, Option<SensorReading>>> {
+        let num_sensors = self.lim.temperature_sensor_readings()?;
+        trace!("Number of sensors: {}", num_sensors);
 
-        // Prefer reporting the sensor error
-        let sensor_ret = sensor_ret?;
-        prompt_ret?;
+        let mut result = HashMap::new();
 
-        Ok(sensor_ret)
-    }
+        for _ in 0..num_sensors {
+            result.insert(
+                self.lim.read_sensor_name()?,
+                self.lim.read_sensor()?,
+            );
 
-    fn get_sensor_readings_internal<T: AsRef<str>>(&mut self, sensors: &[T])
-        -> Result<Vec<Result<SensorReading>>>
-    {
-        if sensors.is_empty() {
-            return Ok(vec![]);
+            self.lim.iterator_next()?;
         }
 
-        let mut args = vec!["sdr", "get"];
-        args.extend(sensors.iter().map(|s| s.as_ref()));
-
-        let command = Self::shell_quote(args)?;
-        trace!("Running IPMI command: {:?}", command);
-
-        self.session.send_line(&command)
-            .map_err(Error::SendCommand)?;
-
-        let mut results = vec![];
-
-        macro_rules! e {
-            ($details:expr) => {
-                |e| Error::SensorParse { details: $details.to_string(), source: e }
-            }
-        }
-
-        for sensor in sensors {
-            let sensor = sensor.as_ref();
-
-            let r = self.session.exp_regex(r#"(^|\n)(Sensor ID\s+:\s+|Unable to find sensor id ')"#)
-                .map_err(e!("ID line not found"))?;
-
-            let found = !r.1.trim_start().starts_with("Unable");
-            let sensor_name = if found {
-                self.session.exp_string(" (")
-            } else {
-                self.session.exp_char('\'')
-            }.map_err(e!("Name not found"))?;
-
-            if sensor_name != *sensor {
-                return Err(Error::DesyncedOutput {
-                    expected: sensor.to_string(),
-                    got: sensor_name,
-                });
-            }
-
-            if found {
-                self.session.exp_regex(r#"\n\s+Sensor Reading\s+:\s+"#)
-                    .map_err(e!("Reading line not found"))?;
-                let (_, value) = self.session.exp_regex(r#"([\d\.]+|Not Available)"#)
-                    .map_err(e!("Reading value not found"))?;
-                trace!("Sensor {:?} reading value: {:?}", sensor_name, value);
-
-                if value == "Not Available" {
-                    return Err(Error::ReadingNotAvailable);
-                }
-
-                let (_, tolerance) = self.session.exp_regex(r#"^\s+\(\+/-\s+[\d\.]+\)\s+"#)
-                    .map_err(e!("Reading tolerance not found"))?;
-                trace!("Sensor {:?} reading tolerance: {:?}", sensor_name, tolerance);
-
-                let units = self.session.read_line()
-                    .map_err(e!("Reading units not found"))?;
-                trace!("Sensor {:?} reading units: {:?}", sensor_name, units);
-
-                self.session.exp_regex(r#"\r?\n\r?\n"#)
-                    .map_err(e!("End marker not found"))?;
-
-                results.push(Ok(SensorReading {
-                    name: sensor_name.to_string(),
-                    value,
-                    units,
-                }));
-            } else {
-                results.push(Err(Error::SensorNotFound(sensor_name.to_string())));
-            }
-        }
-
-        Ok(results)
+        Ok(result)
     }
 }

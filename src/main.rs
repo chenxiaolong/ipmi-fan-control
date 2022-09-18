@@ -1,5 +1,7 @@
+mod bindings;
 mod config;
 mod error;
+mod freeipmi;
 mod source;
 mod ipmi;
 
