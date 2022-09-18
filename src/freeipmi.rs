@@ -238,7 +238,7 @@ impl LfiSession {
                 ctx.find_in_band()?;
             }
             SessionType::Remote { hostname, username, password } => {
-                ctx.open_out_of_band(hostname, username, password)?;
+                ctx.open_out_of_band(hostname, username, &password.0)?;
             },
         };
 
@@ -389,7 +389,7 @@ impl LimSession {
             SessionType::Remote { hostname, username, password } => (
                 Some(hostname.clone()),
                 CString::new(username.as_str()).unwrap().into_raw(),
-                CString::new(password.as_str()).unwrap().into_raw(),
+                CString::new(password.0.as_str()).unwrap().into_raw(),
             ),
         };
 
