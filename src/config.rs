@@ -160,6 +160,16 @@ impl Zone {
     }
 }
 
+/// Simple wrapper around a password string with a redacted Debug implementation
+#[derive(Deserialize)]
+pub struct Password(pub String);
+
+impl fmt::Debug for Password {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "lowercase", tag = "type")]
 pub enum SessionType {
@@ -167,7 +177,7 @@ pub enum SessionType {
     Remote {
         hostname: String,
         username: String,
-        password: String,
+        password: Password,
     },
 }
 
@@ -236,7 +246,7 @@ impl<'de> Deserialize<'de> for SessionTypeCompat {
                 Ok(SessionType::Remote {
                     hostname: opt.hostname,
                     username: opt.username,
-                    password: opt.password,
+                    password: Password(opt.password),
                 })
             }
 
