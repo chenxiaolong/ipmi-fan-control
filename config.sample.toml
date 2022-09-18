@@ -13,9 +13,9 @@
 
 # Definition of a logical fan zone.
 [[zones]]
-# IPMI session. If unspecified, the `default` session is used, which runs
-# ipmitool with no arguments. Sessions are defined below in the `sessions`
-# section.
+# IPMI session. If unspecified, the `default` session is used, which uses the
+# local in-band IPMI device (eg. /dev/ipmi0). Sessions are defined below in the
+# `sessions` section.
 #session = "default"
 
 # List of IPMI zones to be included in this logical zone.

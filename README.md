@@ -45,7 +45,7 @@ Running
 
 If ipmi-fan-control was installed from a package, update `/etc/ipmi-fan-control.toml` to match the desired configuration and then enable and start the `ipmi-fan-control` systemd service.
 
-If built from source, make a copy of [`config.sample.toml`](config.sample.toml) and update the values to match your server's configuration. Then, make sure `ipmitool` is installed as it is required for controlling the fans. Finally, run `ipmi-fan-control` with:
+If built from source, make a copy of [`config.sample.toml`](config.sample.toml) and update the values to match your server's configuration. Then, run `ipmi-fan-control` with:
 
 ```sh
 # Debug
@@ -53,9 +53,3 @@ sudo ./target/debug/ipmi-fan-control --config config.toml
 # Release
 sudo ./target/release/ipmi-fan-control --config config.toml
 ```
-
-TODO
-----
-
-* Use libfreeipmi directly instead of interacting with `ipmitool shell` with rexpect. If the ipmitool shell UI changes, ipmi-fan-control will most likely break.
-* Add support for Windows.

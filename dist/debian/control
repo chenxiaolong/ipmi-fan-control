@@ -4,8 +4,17 @@ Priority: optional
 Build-Depends:
  debhelper (>= 12),
  dh-exec,
+# Rust
  cargo:native,
  rustc:native,
+# bindgen
+ clang,
+ libclang-dev,
+ llvm-dev,
+# ipmi-fan-control
+ libfreeipmi-dev,
+ libipmimonitoring-dev,
+ pkg-config,
 Maintainer: none <none@none.none>
 Standards-Version: 4.5.1
 Vcs-Git: https://github.com/chenxiaolong/ipmi-fan-control.git
@@ -19,7 +28,6 @@ Multi-Arch: allowed
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
- ipmitool,
 Recommends:
  smartmontools (>= 7.0),
 Description: SuperMicro IPMI fan control daemon
