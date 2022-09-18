@@ -64,10 +64,6 @@ pub enum Error {
         attempts: u64,
         source: Box<Self>,
     },
-    #[error("Internal retry error: {message}")]
-    RetriesInternal {
-        message: String,
-    },
     #[error("IPMI error: {0}")]
     Ipmi(#[from] ipmi::Error),
     #[error("{path:?}: {source}")]
@@ -81,13 +77,9 @@ pub enum Error {
 
 impl From<retry::Error<Self>> for Error {
     fn from(value: retry::Error<Self>) -> Self {
-        use retry::Error::{Internal, Operation};
-
-        match value {
-            Operation { error, total_delay: _, tries } => {
-                Self::RetriesFailed { attempts: tries, source: Box::new(error) }
-            }
-            Internal(message) => Self::RetriesInternal { message }
+        Self::RetriesFailed {
+            attempts: value.tries,
+            source: Box::new(value.error),
         }
     }
 }
