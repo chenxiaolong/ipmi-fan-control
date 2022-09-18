@@ -292,7 +292,7 @@ dependencies = [
 
 [[package]]
 name = "ipmi-fan-control"
-version = "0.3.10"
+version = "0.4.0"
 dependencies = [
  "bindgen",
  "clap",
