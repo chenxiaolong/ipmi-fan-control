@@ -34,8 +34,7 @@ interval = 5
 # source fails. This field has no effect if `retries` is set to 0.
 #retry_delay_ms = 500
 
-# Temperature sources to use for measurement. Sensors that report invalid
-# temperatures are currently ignored.
+# Temperature sources to use for measurement.
 sources = [
     # IPMI sensor source. The sensor's units must be `degrees C`.
     { type = "ipmi", sensor = "CPU1 Temp" },

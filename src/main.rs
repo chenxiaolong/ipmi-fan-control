@@ -7,7 +7,7 @@ mod ipmi;
 
 use {
     std::{
-        cmp::{self, Reverse},
+        cmp::Reverse,
         collections::HashMap,
         env,
         io,
@@ -308,21 +308,17 @@ impl MainApp {
             trace!("Querying sources for zones {:?} (attempt {}/{})",
                    zone_config.ipmi_zones, i, zone_config.retries.0 + 1);
             get_source_readings(ipmi.clone(), &zone_config.sources)
-        })?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+        })?;
         readings.sort_by_key(|r| Reverse(*r));
 
+        // The source list is guaranteed to never be empty so if no error
+        // occurs, there will always be an equal number of readings
         match zone_config.aggregation {
             Aggregation::Maximum => {
-                readings.first().copied().ok_or(Error::NoValidReadings)
+                Ok(readings.first().copied().unwrap())
             }
             Aggregation::Average { top } => {
-                let n = cmp::min(top.unwrap_or(readings.len()), readings.len());
-                if n == 0 {
-                    return Err(Error::NoValidReadings);
-                }
+                let n = top.unwrap_or(readings.len());
 
                 let sum = readings
                     .into_iter()

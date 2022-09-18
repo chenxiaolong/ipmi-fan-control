@@ -45,14 +45,16 @@ pub enum Error {
     },
     #[error("Sensor reading not available: {0}")]
     SensorNoReading(String),
-    #[error("Failed to parse SMART output for block device {block_dev:?}: {source}")]
+    #[error("Temperature reading out of bounds")]
+    ReadingExceedsBounds,
+    #[error("Failed to parse SMART output for block device: {block_dev:?}: {source}")]
     SmartParse {
         block_dev: PathBuf,
         source: serde_json::Error,
     },
-    #[error("No sensors had valid temperature readings")]
-    NoValidReadings,
-    #[error("Failed to run {command:?}: {status}")]
+    #[error("Block device has no temperature reading: {0:?}")]
+    SmartNoReading(PathBuf),
+    #[error("Failed to run: {command:?}: {status}")]
     Command {
         command: PathBuf,
         status: ExitStatus,

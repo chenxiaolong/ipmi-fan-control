@@ -209,7 +209,7 @@ pub struct IpmitoolOpt {
 #[derive(Debug, Default)]
 pub struct SessionTypeCompat(pub SessionType);
 
-/// Deserialize either a map as a native SessionType instance or an array of
+/// Deserialize either a map as a native [`SessionType`] instance or an array of
 /// strings as ipmitool arguments.
 impl<'de> Deserialize<'de> for SessionTypeCompat {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -312,7 +312,7 @@ pub fn load_config(path: &Path) -> Result<Config> {
         } else if zone_config.sources.is_empty() {
             return Err(Error::ConfigValidation {
                 path: path.to_owned(),
-                reason: format!("zones[{}].sensors: must be non-empty", i),
+                reason: format!("zones[{}].sources: must be non-empty", i),
             });
         }
 

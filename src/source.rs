@@ -19,13 +19,15 @@ use {
 /// if smartctl fails to run or if the output can't be parsed as JSON. If the
 /// SMART data does not include the temperature or if the reported temperature
 /// exceeds the bounds of a `u8`, then `Ok(None)` is returned.
-fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
+fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
+    let block_dev = block_dev.as_ref();
+
     let mut proc = Command::new("smartctl")
         .arg("-j")
         .arg("-A")
         .arg("-n")
         .arg("standby")
-        .arg(block_dev.as_ref())
+        .arg(block_dev)
         .stdout(Stdio::piped())
         .spawn()
         .map_err(|e| Error::Io { path: "(smartctl)".into(), source: e })?;
@@ -41,22 +43,25 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<Option<u8>> {
      }
 
     let root: serde_json::Value = result
-        .map_err(|e| Error::SmartParse { block_dev: block_dev.as_ref().to_owned(), source: e })?;
+        .map_err(|e| Error::SmartParse { block_dev: block_dev.to_owned(), source: e })?;
 
     let temperature = root
         .get("temperature")
         .and_then(|v| v.get("current"))
-        .and_then(|v| v.as_u64())
-        .and_then(|v| v.try_into().ok());
+        .ok_or_else(|| Error::SmartNoReading(block_dev.to_owned()))?
+        .as_u64()
+        .and_then(|v| v.try_into().ok())
+        .ok_or(Error::ReadingExceedsBounds)?;
 
     Ok(temperature)
 }
 
-/// Get the temperature from a plain-text file (typically a sysfs path). This
-/// function only fails if the file cannot be read or if the whitespace-trimmed
-/// contents cannot be parsed as an integer. If the reported temperature exceeds
-/// the bounds of a `u8`, then `Ok(None)` is returned.
-fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<Option<u8>> {
+/// Get the temperature from a plain-text file (typically a sysfs path). The
+/// contents of the file should be a decimal-formatted integer in units of
+/// thousandths degrees Celsius after whitespace is trimmed. If the temperature,
+/// after being converted to degrees Celsius, does not fit in a [`u8`], then
+/// [`Error::ReadingExceedsBounds`] is returned.
+fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<u8> {
     let contents = fs::read_to_string(path.as_ref())
         .map_err(|e| Error::Io { path: path.as_ref().to_owned(), source: e })?;
     let trimmed = contents.trim();
@@ -66,7 +71,8 @@ fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<Option<u8>> {
         .parse::<u32>()
         .map_err(|e| Error::SensorValueParse { value: trimmed.to_owned(), source: e })?
         .checked_div(1000)
-        .and_then(|t| t.try_into().ok());
+        .and_then(|t| t.try_into().ok())
+        .ok_or(Error::ReadingExceedsBounds)?;
 
     Ok(temperature)
 }
@@ -77,7 +83,7 @@ fn parse_file_source<T: AsRef<Path>>(path: T) -> Result<Option<u8>> {
 /// Celsius or if the value exceeds the bounds of a `u8`, then the reported
 /// value of that sensor will be `None`.
 fn parse_ipmi_sources(ipmi: Arc<Mutex<Ipmi>>, sensors: &HashSet<String>)
-    -> Result<HashMap<String, Option<u8>>>
+    -> Result<HashMap<String, u8>>
 {
     if sensors.is_empty() {
         return Ok(HashMap::default());
@@ -112,7 +118,7 @@ fn parse_ipmi_sources(ipmi: Arc<Mutex<Ipmi>>, sensors: &HashSet<String>)
                 sensor: sensor.into(),
                 value: v,
             }),
-        };
+        }.ok_or(Error::ReadingExceedsBounds)?;
 
         result.insert(sensor.into(), temperature);
     }
@@ -123,7 +129,7 @@ fn parse_ipmi_sources(ipmi: Arc<Mutex<Ipmi>>, sensors: &HashSet<String>)
 /// Get temperature readings for the given sources. The returned values are in
 /// the same order as given.
 pub fn get_source_readings(ipmi: Arc<Mutex<Ipmi>>, sources: &[Source])
-    -> Result<Vec<Option<u8>>>
+    -> Result<Vec<u8>>
 {
     // Get IPMI sensor readings in one go for better performance.
     let ipmi_sensors = sources.iter()
