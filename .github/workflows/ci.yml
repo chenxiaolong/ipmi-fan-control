@@ -7,14 +7,9 @@ on:
 jobs:
   build:
     name: Build project
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-22.04
     env:
       CARGO_TERM_COLOR: always
-    strategy:
-      fail-fast: false
-      matrix:
-        # Once Windows support is complete, windows-latest can be added
-        os: [ubuntu-22.04]
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
