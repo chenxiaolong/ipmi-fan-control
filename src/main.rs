@@ -21,14 +21,12 @@ use {
         u8,
     },
     clap::Parser,
-    futures::stream::FuturesUnordered,
     log::{debug, error, info, trace},
     retry::retry_with_index,
     tokio::{
-        task,
+        task::{self, JoinSet},
         time::sleep,
     },
-    tokio_stream::StreamExt,
 
     config::{Aggregation, Config, load_config, SessionType, Step, Zone},
     error::{Error, Result},
@@ -156,14 +154,14 @@ impl MainApp {
     /// Run asynchronous loops for each zone. Returns when interrupted via
     /// signal handlers (eg. ^C) or if a fatal error occurs.
     async fn run(&mut self) -> Result<()> {
-        let mut loops = FuturesUnordered::new();
+        let mut loops = JoinSet::new();
 
         for zone_config in &self.config.zones {
-            loops.push(tokio::spawn(Self::zone_loop(
+            loops.spawn(Self::zone_loop(
                 self.sessions.get_mut(&zone_config.session.0).unwrap().clone(),
                 // Cloned since there's no structured concurrency support yet
                 Arc::new(zone_config.clone()),
-            )));
+            ));
         }
 
         let mut first_result = None;
@@ -178,7 +176,7 @@ impl MainApp {
                     c.map_err(|e| Error::Io { path: "(interrupt)".into(), source: e })
                 }
                 // Oh boy, this is an Option<Result<Result<()>, JoinError>>
-                r = loops.next() => {
+                r = loops.join_next() => {
                     match r {
                         // No tasks left
                         None => break,
@@ -207,9 +205,7 @@ impl MainApp {
             // they are dropped. Without the explicit aborts and joins, the
             // IpmiSession destructors might not run since the tasks would keep
             // the Arcs alive.
-            for handle in loops.iter_mut() {
-                handle.abort();
-            }
+            loops.abort_all();
         }
 
         first_result.unwrap_or(Ok(()))
