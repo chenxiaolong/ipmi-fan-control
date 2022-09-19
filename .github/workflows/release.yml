@@ -137,7 +137,7 @@ jobs:
           cd "${project}/ipmi-fan-control"
           find -mindepth 1 -maxdepth 1 -type f -delete
 
-          bsdtar -xf ../../rpm/*.src.rpm
+          bsdtar -xf ../../srpm/*.src.rpm
           cp ../../pkgbuild/* .
           cp ../../debian/!(*_source.*) .
 
