@@ -98,7 +98,7 @@ jobs:
 
       - name: Find vendored tarball
         run: |
-          tarball=(dist/output/*.vendored.tar.*)
+          tarball=(dist/output/tarball/*.vendored.tar.*)
           echo "TARBALL_PATH=${tarball}" >> "${GITHUB_ENV}"
           echo "TARBALL_NAME=${tarball##*/}" >> "${GITHUB_ENV}"
 
