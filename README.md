@@ -21,6 +21,8 @@ This project depends on:
 * `pkg-config`
 * the Clang compiler (for generating Rust FFI bindings to the freeipmi libraries)
 * the Rust compiler
+* [optional] smartmontools (for querying HDD/SSD drive temperatures)
+* [optional] hdparm (for querying Hitachi/HGST/WD drive temperatures while spun down)
 
 These packages can be installed from the system package manager:
 

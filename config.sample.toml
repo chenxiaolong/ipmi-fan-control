@@ -48,9 +48,18 @@ sources = [
     # The thermal_zone sysfs paths on Linux satisfy these conditions.
     { type = "file", path = "/sys/class/thermal/thermal_zone1/temp" },
 
-    # HDD S.M.A.R.T. source. Disks that are spun down are ignored to avoid
-    # unnecessary spin-ups. Requires smartmontools >= 7.0 to be installed.
+    # HDD S.M.A.R.T. source. Disks that are spun down may not report a
+    # temperature reading, leading to an error. This internally runs:
+    #
+    #   smartctl -j -A -n standby <block_dev>
+    #
+    # and requires smartmontools >= 7.0 to be installed.
     { type = "smart", block_dev = "/dev/disk/by-id/..." },
+
+    # "hdparm -H" source. This is specific to some Hitachi/HGST/WD drives and
+    # allows the HDD temperature to be queried even when the drive is spun down.
+    # This requires hdparm to be installed.
+    { type = "hdparm", block_dev = "/dev/disk/by-id/..." },
 ]
 
 # Method of aggregating the temperatures from all of the sources. By default,
