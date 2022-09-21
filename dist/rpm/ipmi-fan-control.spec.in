@@ -64,7 +64,7 @@ sed \
     < dist/ipmi-fan-control.service.in \
     > %{buildroot}%{_unitdir}/%{name}.service
 
-install -D -m 0644 config.sample.toml \
+install -D -m 0640 config.sample.toml \
     %{buildroot}%{_sysconfdir}/%{name}.toml
 
 %post
