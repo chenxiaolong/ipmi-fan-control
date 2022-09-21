@@ -11,7 +11,7 @@ arch=("x86_64")
 license=("GPLv3+")
 makedepends=("cargo" "clang")
 depends=("freeipmi")
-optdepends=("smartmontools")
+optdepends=("hdparm" "smartmontools")
 sha256sums=("@TARBALL_SHA256@")
 
 build() {

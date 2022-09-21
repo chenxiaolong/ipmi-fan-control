@@ -29,6 +29,7 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
+ hdparm,
  smartmontools (>= 7.0),
 Description: SuperMicro IPMI fan control daemon
  ipmi-fan-control is a program written in Rust to control the fans on SuperMicro

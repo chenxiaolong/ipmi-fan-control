@@ -119,6 +119,10 @@ pub enum Source {
         // TOML can't encode OsString
         block_dev: String,
     },
+    Hdparm {
+        // TOML can't encode OsString
+        block_dev: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize)]

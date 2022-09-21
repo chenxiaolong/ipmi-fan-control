@@ -54,6 +54,10 @@ pub enum Error {
     },
     #[error("Block device has no temperature reading: {0:?}")]
     SmartNoReading(PathBuf),
+    #[error("hdparm reported no data: {0:?}")]
+    HdparmNoData(PathBuf),
+    #[error("hdparm reported bad data: {0:?}")]
+    HdparmBadData(PathBuf),
     #[error("Failed to run: {command:?}: {status}")]
     Command {
         command: PathBuf,

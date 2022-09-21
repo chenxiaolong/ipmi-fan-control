@@ -34,9 +34,8 @@ BuildRequires:  systemd-rpm-macros
 %{systemd_requires}
 %endif
 
-%if 0%{?rhel} < 8
-Requires:       smartmontools >= 7.0
-%else
+%if 0%{?rhel} >= 8
+Recommends:     hdparm
 Recommends:     smartmontools >= 7.0
 %endif
 

@@ -3,6 +3,7 @@ use {
         collections::{HashMap, HashSet},
         convert::TryInto,
         fs,
+        io::{BufRead, BufReader},
         path::Path,
         process::{Command, Stdio},
         sync::{Arc, Mutex},
@@ -15,10 +16,9 @@ use {
     },
 };
 
-/// Get the temperature of a hard drive via smartctl. This function fails only
-/// if smartctl fails to run or if the output can't be parsed as JSON. If the
-/// SMART data does not include the temperature or if the reported temperature
-/// exceeds the bounds of a `u8`, then `Ok(None)` is returned.
+/// Get the temperature of a hard drive via smartctl. This function fails if
+/// smartctl does not return temperature data (eg. if a drive is in standby) or
+/// if the reported temperature does not fit in a [`u8`].
 fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
     let block_dev = block_dev.as_ref();
 
@@ -54,6 +54,50 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
         .ok_or(Error::ReadingExceedsBounds)?;
 
     Ok(temperature)
+}
+
+/// Get the temperature of a Hitachi/HGST/WD drive via hdparm. This function
+/// fails if hdparm does not print the temperature line, hdparm prints the bad
+/// sense data line, or if the reported temperature does not fit in a [`u8`].
+fn parse_hdparm_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
+    let block_dev = block_dev.as_ref();
+
+    let mut proc = Command::new("hdparm")
+        .arg("-H")
+        .arg(block_dev)
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| Error::Io { path: "(hdparm)".into(), source: e })?;
+
+    let mut reader = BufReader::new(proc.stdout.take().unwrap());
+    let mut line = String::new();
+
+    loop {
+        let n = reader.read_line(&mut line)
+            .map_err(|e| Error::Io { path: "(hdparm)".into(), source: e })?;
+        if n == 0 {
+            return Err(Error::HdparmNoData(block_dev.to_owned()));
+        } else if line.contains("bad/missing sense data") {
+            // hdparm exits with 0 when the drive responds with bad data
+            return Err(Error::HdparmBadData(block_dev.to_owned()));
+        } else if !line.contains("drive temperature (celsius) is:") {
+            continue;
+        }
+
+        // The drive temperature line always has the number as the last token
+        let last_token = line.trim_end().rsplit_once(' ')
+            .ok_or_else(|| Error::HdparmBadData(block_dev.to_owned()))?
+            .1;
+
+        let temperature = last_token
+            // Can be negative, but is within the bounds of 1 byte
+            .parse::<i8>()
+            .map_err(|e| Error::SensorValueParse { value: last_token.to_owned(), source: e })?
+            .try_into()
+            .map_err(|_| Error::ReadingExceedsBounds)?;
+
+        return Ok(temperature);
+    }
 }
 
 /// Get the temperature from a plain-text file (typically a sysfs path). The
@@ -149,6 +193,7 @@ pub fn get_source_readings(ipmi: Arc<Mutex<Ipmi>>, sources: &[Source])
                 Source::Ipmi { sensor } => Ok(ipmi_results[sensor.as_str()]),
                 Source::File { path } => parse_file_source(path),
                 Source::Smart { block_dev } => parse_smart_source(block_dev),
+                Source::Hdparm { block_dev } => parse_hdparm_source(block_dev),
             }
         })
         .collect()
