@@ -34,5 +34,5 @@ package() {
   install -Dm644 "${srcdir}"/ipmi-fan-control.service "${pkgdir}/usr/lib/systemd/system/"
 
   install -Dm755 "target/release/$pkgname" "${pkgdir}/usr/bin/$pkgname"
-  install -Dm 644 config.sample.toml "${pkgdir}/etc/${pkgname}.toml"
+  install -Dm640 config.sample.toml "${pkgdir}/etc/${pkgname}.toml"
 }

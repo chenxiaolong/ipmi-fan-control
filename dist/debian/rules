@@ -16,6 +16,10 @@ override_dh_auto_clean:
 	cargo clean
 	rm -f debian/ipmi-fan-control.service
 
+override_dh_fixperms:
+	dh_fixperms --exclude ipmi-fan-control.toml
+	chmod 640 debian/ipmi-fan-control/etc/ipmi-fan-control.toml
+
 override_dh_installsystemd:
 	# The sample config must be edited for anything to work, so don't enable or
 	# start the service on the initial installation.
