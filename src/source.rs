@@ -3,7 +3,7 @@ use {
         collections::{HashMap, HashSet},
         convert::TryInto,
         fs,
-        io::{BufRead, BufReader},
+        io::{BufRead, BufReader, Read},
         path::Path,
         process::{Command, Stdio},
         sync::{Arc, Mutex},
@@ -40,7 +40,7 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
         // smartctl will return status code 2 when a drive is in standby
         Some(0) | Some(2) => {},
         _ => return Err(Error::Command { command: "smartctl".into(), status }),
-     }
+    }
 
     let root: serde_json::Value = result
         .map_err(|e| Error::SmartParse { block_dev: block_dev.to_owned(), source: e })?;
@@ -56,20 +56,8 @@ fn parse_smart_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
     Ok(temperature)
 }
 
-/// Get the temperature of a Hitachi/HGST/WD drive via hdparm. This function
-/// fails if hdparm does not print the temperature line, hdparm prints the bad
-/// sense data line, or if the reported temperature does not fit in a [`u8`].
-fn parse_hdparm_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
-    let block_dev = block_dev.as_ref();
-
-    let mut proc = Command::new("hdparm")
-        .arg("-H")
-        .arg(block_dev)
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| Error::Io { path: "(hdparm)".into(), source: e })?;
-
-    let mut reader = BufReader::new(proc.stdout.take().unwrap());
+fn parse_hdparm_output(block_dev: &Path, stdout: &mut dyn Read) -> Result<u8> {
+    let mut reader = BufReader::new(stdout);
     let mut line = String::new();
 
     loop {
@@ -98,6 +86,30 @@ fn parse_hdparm_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
 
         return Ok(temperature);
     }
+}
+
+/// Get the temperature of a Hitachi/HGST/WD drive via hdparm. This function
+/// fails if hdparm does not print the temperature line, hdparm prints the bad
+/// sense data line, or if the reported temperature does not fit in a [`u8`].
+fn parse_hdparm_source<T: AsRef<Path>>(block_dev: T) -> Result<u8> {
+    let block_dev = block_dev.as_ref();
+
+    let mut proc = Command::new("hdparm")
+        .arg("-H")
+        .arg(block_dev)
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| Error::Io { path: "(hdparm)".into(), source: e })?;
+
+    let result = parse_hdparm_output(block_dev, &mut proc.stdout.take().unwrap());
+    let status = proc.wait()
+        .map_err(|e| Error::Io { path: "(hdparm)".into(), source: e })?;
+
+    if status.code() != Some(0) {
+        return Err(Error::Command { command: "hdparm".into(), status });
+    }
+
+    result
 }
 
 /// Get the temperature from a plain-text file (typically a sysfs path). The
