@@ -1,5 +1,6 @@
 [Unit]
 Description=SuperMicro IPMI fan control daemon
+After=network-online.target
 
 [Service]
 ExecStart=@BINDIR@/ipmi-fan-control -c @SYSCONFDIR@/ipmi-fan-control.toml
