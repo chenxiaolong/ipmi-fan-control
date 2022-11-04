@@ -1,9 +1,11 @@
 ipmi-fan-control
 ================
 
-ipmi-fan-control is a program written in Rust to control the fans on SuperMicro motherboards based on the readings of temperature sensors.
+ipmi-fan-control is a program written in Rust to control the fans on Supermicro motherboards based on the readings of temperature sensors.
 
 _Note_: This has primarily been tested on a 6028U-TR4T+, which uses the X10DRU-i+ motherboard. Also, only Linux and other Unix-like operating systems are currently supported.
+
+**2022-11-04 Update**: This project is no longer in active development because I no longer have a Supermicro motherboard that requires more granular fan control. However, the project is feature complete and I will continue to do maintenance work, like updating dependencies and creating binary repos for new Linux distro releases. The underlying fan control IPMI commands have not changed across 5 generations of motherboards. It's unlikely that ipmi-fan-control will stop working on any currently supported motherboards.
 
 Installation
 ------------
