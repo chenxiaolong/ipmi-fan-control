@@ -22,7 +22,7 @@ jobs:
           else
               version=0.0.0.${GITHUB_REF#refs/heads/}
           fi
-          echo "::set-output name=version::${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Create release
         id: create_release
@@ -51,9 +51,10 @@ jobs:
         id: get_target
         shell: bash
         run: |
-          echo -n '::set-output name=name::'
+          echo -n 'name=' >> "${GITHUB_OUTPUT}"
           RUSTC_BOOTSTRAP=1 rustc -Z unstable-options --print target-spec-json \
-              | jq -r '."llvm-target"'
+              | jq -r '."llvm-target"' \
+              >> "${GITHUB_OUTPUT}"
 
       - name: Install clippy
         run: rustup component add clippy
