@@ -7,6 +7,8 @@ _Note_: This has primarily been tested on a 6028U-TR4T+, which uses the X10DRU-i
 
 **2022-11-04 Update**: This project is no longer in active development because I no longer have a Supermicro motherboard that requires more granular fan control. However, the project is feature complete and I will continue to do maintenance work, like updating dependencies and creating binary repos for new Linux distro releases. The underlying fan control IPMI commands have not changed across 5 generations of motherboards. It's unlikely that ipmi-fan-control will stop working on any currently supported motherboards.
 
+**2024-04-14 Update**: I am archiving this repo and no longer plan to keep the binary repos up to date for new distro releases. Folks who want to continue using this project should build it from source. As mentioned in the previous update, this project is feature complete and is unlikely to suddenly stop working.
+
 Installation
 ------------
 
